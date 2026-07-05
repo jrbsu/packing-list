@@ -1,0 +1,56 @@
+{
+    "clothes": [
+        {
+            "id": 1,
+            "item": "Underwear",
+            "onPerson": "1",
+            "checkedBag": 5,
+            "carryOn": 1,
+            "backup": 0,
+            "packed": false,
+            "total": 7
+        },
+        {
+            "id": 2,
+            "item": "Socks",
+            "onPerson": 0,
+            "checkedBag": 5,
+            "carryOn": 1,
+            "backup": 0,
+            "packed": false,
+            "total": 6
+        },
+        {
+            "id": 3,
+            "item": "T-shirts",
+            "onPerson": 0,
+            "checkedBag": 6,
+            "carryOn": 1,
+            "backup": 0,
+            "packed": false,
+            "total": 7
+        }
+    ],
+    "electronics": [
+        {
+            "id": 4,
+            "item": "Work laptop",
+            "onPerson": 1,
+            "checkedBag": 1,
+            "carryOn": 0,
+            "backup": 0,
+            "packed": false,
+            "total": 2
+        },
+        {
+            "id": 5,
+            "item": "Headphones",
+            "onPerson": 1,
+            "checkedBag": 1,
+            "carryOn": 0,
+            "backup": 0,
+            "packed": false,
+            "total": 2
+        }
+    ]
+}

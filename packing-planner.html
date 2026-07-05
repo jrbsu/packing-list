@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Packing Planner</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <header class="header">
+    <div class="headerInner">
+      <div class="brand">
+        <div class="logo">✈</div>
+        <div>
+          <h1>Packing Planner</h1>
+          <div class="small" id="saveStatus">Autosaves in this browser</div>
+        </div>
+      </div>
+      <div class="actions">
+        <select id="tripPicker" class="tripSelect" aria-label="Choose saved trip"></select>
+        <button id="newTripBtn">New trip</button>
+        <button id="duplicateTripBtn">Duplicate</button>
+        <button id="exportBtn">Export</button>
+        <button id="importBtn">Import</button>
+        <button id="jsonBtn" class="ghost">Save text</button>
+        <input id="importFile" class="hidden" type="file" accept="application/json,.json">
+      </div>
+    </div>
+  </header>
+
+  <main class="page">
+    <section class="grid">
+      <div class="leftStack">
+        <article class="card">
+          <div class="cardHead">
+            <div>
+              <h2>Trip details</h2>
+              <div class="tiny">Type dates, or choose them directly on the calendar.</div>
+            </div>
+            <button id="deleteTripBtn" class="danger slim">Delete</button>
+          </div>
+          <div class="cardBody">
+            <div class="fields">
+              <div>
+                <label class="lbl" for="tripName">Trip</label>
+                <input id="tripName" type="text" placeholder="e.g. Disney">
+              </div>
+              <div>
+                <label class="lbl" for="location">Location</label>
+                <input id="location" type="text" placeholder="e.g. Anaheim, CA">
+              </div>
+              <div>
+                <label class="lbl" for="leaveDate">Leave date</label>
+                <input id="leaveDate" type="date">
+              </div>
+              <div>
+                <label class="lbl" for="returnDate">Return date</label>
+                <input id="returnDate" type="date">
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <section id="rulesCard" class="card configCard collapsed">
+          <div id="rulesHead" class="cardHead collapsibleHead" role="button" tabindex="0" aria-controls="rulesBody"
+            aria-expanded="false">
+            <div>
+              <h2>Packing rules</h2>
+              <div class="tiny">Expandable config. Automatic items recalculate from these rules; manual items keep your
+                counts.</div>
+            </div>
+            <div class="headActions">
+              <button id="recalculateBtn" class="slim">Recalculate</button>
+              <button id="rulesToggle" class="icon ghost" aria-label="Toggle packing rules">
+                <span class="collapseIcon">⌄</span>
+              </button>
+            </div>
+          </div>
+
+          <div id="rulesBody" class="cardBody rulesBody">
+            <div class="rules">
+              <div class="rule">
+                <div>
+                  <div class="ruleTitle">Backup set</div>
+                  <div class="ruleHelp">Extra basic clothes, usually in carryon.</div>
+                </div>
+                <input id="backup" type="number" min="0" step="1">
+              </div>
+
+              <div class="rule">
+                <div>
+                  <div class="ruleTitle">Departure day wearing</div>
+                  <div class="ruleHelp">Shown for planning, not packed.</div>
+                </div>
+                <input id="departureWearing" type="number" min="0" step="1">
+              </div>
+
+              <div class="rule">
+                <div>
+                  <div class="ruleTitle">Laundry days</div>
+                  <div class="ruleHelp">Splits the trip into laundry cycles. Example: 7 hold-luggage days + 1 laundry
+                    day = 4 sets.</div>
+                </div>
+                <input id="laundryDays" type="number" min="0" step="1">
+              </div>
+
+              <div class="rule">
+                <div>
+                  <div class="ruleTitle">Formal days</div>
+                  <div class="ruleHelp">Adds formal-rule items.</div>
+                </div>
+                <input id="formalDays" type="number" min="0" step="1">
+              </div>
+
+              <label class="rule toggleRule">
+                <div>
+                  <div class="ruleTitle">Hot weather</div>
+                  <div class="ruleHelp">Adds warm-weather items like shorts, swimwear, sunscreen, and a cap.</div>
+                </div>
+
+                <input id="hotPlace" class="toggleInput" type="checkbox">
+
+                <span class="ruleToggleButton" aria-hidden="true">
+                  <span class="toggleState toggleOff">Off</span>
+                  <span class="toggleState toggleOn">On</span>
+                </span>
+              </label>
+
+              <label class="rule toggleRule">
+                <div>
+                  <div class="ruleTitle">International travel</div>
+                  <div class="ruleHelp">Adds passport, adaptor, insurance, and other international items.</div>
+                </div>
+
+                <input id="international" class="toggleInput" type="checkbox">
+
+                <span class="ruleToggleButton" aria-hidden="true">
+                  <span class="toggleState toggleOff">Off</span>
+                  <span class="toggleState toggleOn">On</span>
+                </span>
+              </label>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <article class="card">
+        <div class="cardHead">
+          <div>
+            <h2>Calendar</h2>
+            <div class="tiny" id="dateHint">Click a date to set your departure, then click another date for your return.
+            </div>
+          </div>
+          <div class="calControls">
+            <button id="prevMonthBtn" class="icon" aria-label="Previous month">‹</button>
+            <div id="calTitle" class="calTitle">Month</div>
+            <button id="nextMonthBtn" class="icon" aria-label="Next month">›</button>
+          </div>
+        </div>
+        <div class="cardBody">
+          <div id="calendar" class="calendar"></div>
+          <div class="legend">
+            <span class="pill"><span class="dot leave"></span>departure</span>
+            <span class="pill"><span class="dot away"></span>in luggage</span>
+            <span class="pill"><span class="dot return"></span>return</span>
+            <button id="clearDatesBtn" class="slim ghost">Clear dates</button>
+          </div>
+        </div>
+      </article>
+
+      <aside class="card summary">
+        <div class="cardHead">
+          <div>
+            <h2>Progress</h2>
+            <div class="tiny">The missing number is the one to beat.</div>
+          </div>
+          <button id="packVisibleBtn" class="slim primary">Pack visible</button>
+        </div>
+        <div class="cardBody">
+          <div class="metrics">
+            <div class="metric"><span>Hold luggage days</span><strong id="travelDays">0</strong></div>
+            <div class="metric"><span>Clothing sets</span><strong id="setsNeeded">0</strong></div>
+            <div class="metric"><span>Missing</span><strong id="missingCount">0</strong></div>
+            <div class="metric"><span>Packed</span><strong id="packedCount">0/0</strong></div>
+          </div>
+          <div class="progressTop">
+            <span>Checklist complete</span>
+            <span id="progressText">0%</span>
+          </div>
+          <div class="bar">
+            <div id="progressFill" class="fill"></div>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="card listCard">
+      <div class="cardHead">
+        <div>
+          <h2>Packing list</h2>
+          <div class="tiny">Edit quantities, notes, categories, and whether each item applies to this trip.</div>
+        </div>
+        <div class="actions">
+          <button id="unpackVisibleBtn" class="slim">Unpack visible</button>
+          <button id="resetPackedBtn" class="slim danger">Clear checks</button>
+        </div>
+      </div>
+
+      <div class="cardBody">
+        <div class="toolbar">
+          <input id="searchItems" type="text" placeholder="Search items…">
+          <select id="categoryFilter" aria-label="Filter category"></select>
+          <select id="bagFilter" aria-label="Filter bag">
+            <option value="all">All bags</option>
+            <option value="checked">Checked bag</option>
+            <option value="carryon">Carryon</option>
+          </select>
+          <label class="checkline">
+            <input id="missingOnly" type="checkbox"> Missing only
+          </label>
+        </div>
+      </div>
+
+      <div id="tables"></div>
+
+      <div class="add">
+        <div>
+          <label class="lbl" for="newItemName">Add item</label>
+          <input id="newItemName" type="text" placeholder="e.g. Sunglasses">
+        </div>
+        <div>
+          <label class="lbl" for="newItemCategory">Category</label>
+          <select id="newItemCategory"></select>
+        </div>
+        <div>
+          <label class="lbl" for="newItemChecked">Checked</label>
+          <input id="newItemChecked" type="number" min="0" step="1" value="0">
+        </div>
+        <div>
+          <label class="lbl" for="newItemCarryon">Carryon</label>
+          <input id="newItemCarryon" type="number" min="0" step="1" value="1">
+        </div>
+        <div>
+          <label class="lbl" for="newItemRule">Rule</label>
+          <select id="newItemRule"></select>
+        </div>
+        <button id="addItemBtn" class="primary">Add</button>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <div id="jsonModal" class="modalBack" role="dialog" aria-modal="true" aria-labelledby="jsonTitle">
+    <div class="modal">
+      <div class="cardHead">
+        <div>
+          <h2 id="jsonTitle">Save file text</h2>
+          <div class="tiny">Copy this text somewhere safe, or paste exported text here and import it.</div>
+        </div>
+        <button id="closeJsonBtn" class="icon" aria-label="Close">×</button>
+      </div>
+      <div class="cardBody">
+        <textarea id="jsonText" spellcheck="false"></textarea>
+        <div class="modalActions">
+          <button id="copyJsonBtn">Copy</button>
+          <button id="importJsonTextBtn" class="primary">Import pasted text</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+
+</html>
