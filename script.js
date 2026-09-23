@@ -216,9 +216,7 @@
         ...fallback.rules,
         ...(rawTrip.rules || {}),
       },
-      collapsedCats: {
-        ...(rawTrip.collapsedCats || {}),
-      },
+      collapsedCats: {},
       items: Array.isArray(rawTrip.items)
         ? rawTrip.items.map(normaliseItem)
         : fallback.items,
@@ -258,7 +256,7 @@
       currentTripId,
       trips,
       ui: {
-        rulesOpen: rawState.ui?.rulesOpen === true,
+        rulesOpen: true,
       },
     };
   }
@@ -284,7 +282,7 @@
       currentTripId: trip.id,
       trips: [trip],
       ui: {
-        rulesOpen: false,
+        rulesOpen: true,
       },
     };
   }
@@ -689,7 +687,8 @@
     const active = document.activeElement;
     const focusKey = els.tables.contains(active) ? { ...active.dataset } : null;
     const visibleItems = getVisibleItems(trip);
-    const openDetails = new Set([...els.tables.querySelectorAll('details[open]')].map(detail => detail.dataset.itemDetails));
+    const closedDetails = new Set([...els.tables.querySelectorAll('details[data-item-details]')]
+      .filter(detail => !detail.open).map(detail => detail.dataset.itemDetails));
 
     els.tables.innerHTML = '';
 
@@ -705,7 +704,7 @@
       els.tables.appendChild(makeCategorySection(trip, category, categoryItems));
     }
     for (const detail of els.tables.querySelectorAll('details[data-item-details]')) {
-      detail.open = openDetails.has(detail.dataset.itemDetails);
+      detail.open = !closedDetails.has(detail.dataset.itemDetails);
     }
     if (focusKey) {
       const replacement = [...els.tables.querySelectorAll('input, select, button, [tabindex]')].find((element) =>
@@ -784,7 +783,7 @@
             value="${escapeHtml(item.name)}"
             aria-label="Item name"
           >
-          <details class="itemDetails" data-item-details="${escapeHtml(item.id)}">
+          <details class="itemDetails" data-item-details="${escapeHtml(item.id)}" open>
             <summary>${item.note ? 'Note & packing rule' : 'Notes & packing rule'}</summary>
             <div class="itemDetailsBody">
           <input
