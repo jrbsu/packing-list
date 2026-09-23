@@ -120,7 +120,7 @@
   function makeDefaultItems() {
     const itemRows = [
       // category, name, checked bag quantity, carryon quantity, rule, note
-      ['clothes', 'Underwear', 3, 1, 'basic', 'One per hold-luggage day, plus backup.'],
+      ['clothes', 'Underwear', 3, 1, 'basic', 'One per day after departure, plus backup; adjusted for laundry.'],
       ['clothes', 'Socks', 3, 1, 'basic', ''],
       ['clothes', 'T-shirts', 3, 1, 'basic', ''],
       ['clothes', 'Dress shirts', 0, 0, 'formal', ''],
@@ -174,8 +174,12 @@
   function makeDefaultTrip() {
     return {
       id: makeId(),
+      usesCheckedBag: true,
       name: 'Disney',
       location: 'Anaheim, CA',
+      homeCountry: '',
+      destination: null,
+      internationalMode: 'auto',
       leaveDate: '2026-06-17',
       returnDate: '2026-06-20',
       calendarMonth: '2026-06',
@@ -191,7 +195,7 @@
 
   function normaliseItem(rawItem) {
     return {
-      id: rawItem.id || makeId(),
+      id: String(rawItem.id || makeId()),
       category: CATEGORIES[rawItem.category] ? rawItem.category : 'other',
       name: rawItem.name || 'Untitled item',
       checked: wholeNumber(rawItem.checked),
@@ -215,12 +219,23 @@
       collapsedCats: {
         ...(rawTrip.collapsedCats || {}),
       },
-      items: Array.isArray(rawTrip.items) && rawTrip.items.length
+      items: Array.isArray(rawTrip.items)
         ? rawTrip.items.map(normaliseItem)
         : fallback.items,
     };
 
-    trip.id ||= makeId();
+    // Migrate the previous flight setting while respecting the renamed preference.
+    trip.usesCheckedBag = typeof rawTrip.usesCheckedBag === 'boolean'
+      ? rawTrip.usesCheckedBag
+      : rawTrip.flying !== false;
+    delete trip.flying;
+    trip.internationalMode = rawTrip.internationalMode === 'auto' ? 'auto' : 'manual';
+    trip.homeCountry = typeof rawTrip.homeCountry === 'string' ? rawTrip.homeCountry : '';
+    trip.destination = validDestination(rawTrip.destination) ? rawTrip.destination : null;
+    if (trip.internationalMode === 'auto' && trip.homeCountry && trip.destination) {
+      trip.rules.international = trip.homeCountry !== trip.destination.country_code;
+    }
+    trip.id = String(trip.id || makeId());
     trip.calendarMonth ||= getMonthKey(trip.leaveDate || new Date());
 
     return trip;
@@ -301,16 +316,12 @@
     returnDate: byId('returnDate'),
 
     backup: byId('backup'),
-    departureWearing: byId('departureWearing'),
+    usesCheckedBag: byId('usesCheckedBag'),
     laundryDays: byId('laundryDays'),
     formalDays: byId('formalDays'),
     hotPlace: byId('hotPlace'),
     international: byId('international'),
 
-    travelDays: byId('travelDays'),
-    setsNeeded: byId('setsNeeded'),
-    missingCount: byId('missingCount'),
-    packedCount: byId('packedCount'),
     progressText: byId('progressText'),
     progressFill: byId('progressFill'),
 
@@ -347,7 +358,7 @@
   // Packing calculations
   // ---------------------------------------------------------------------------
 
-  function getHoldLuggageDays(trip) {
+  function getPackingDays(trip) {
     const leaveDate = parseIsoDate(trip.leaveDate);
     const returnDate = parseIsoDate(trip.returnDate);
 
@@ -360,7 +371,7 @@
 
   function getClothingSetsNeeded(trip) {
     const laundryCycles = wholeNumber(trip.rules.laundryDays) + 1;
-    return Math.max(0, Math.ceil(getHoldLuggageDays(trip) / laundryCycles));
+    return Math.max(0, Math.ceil(getPackingDays(trip) / laundryCycles));
   }
 
   function getItemTotal(item) {
@@ -377,6 +388,7 @@
     const formalDays = wholeNumber(trip.rules.formalDays);
 
     for (const item of trip.items) {
+      const previousTotal = getItemTotal(item);
       if (item.rule === 'basic') {
         item.checked = clothingSets;
         item.carryon = backupSets;
@@ -397,7 +409,7 @@
         item.carryon = trip.rules.international ? 1 : 0;
       }
 
-      if (!isItemUsed(item)) {
+      if (!isItemUsed(item) || getItemTotal(item) !== previousTotal) {
         item.packed = false;
       }
     }
@@ -432,7 +444,7 @@
       const matchesSearch = !search || searchableText.includes(search);
       const matchesCategory = filters.category === 'all' || item.category === filters.category;
       const matchesBag =
-        filters.bag === 'all' ||
+        !trip.usesCheckedBag || filters.bag === 'all' ||
         (filters.bag === 'checked' && wholeNumber(item.checked) > 0) ||
         (filters.bag === 'carryon' && wholeNumber(item.carryon) > 0);
       const isRecentlyPacked = item.id === recentlyPackedItemId && item.packed;
@@ -450,7 +462,12 @@
   // ---------------------------------------------------------------------------
 
   function save(showMessage = false) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch {
+      els.saveStatus.textContent = 'Could not autosave — export a copy to keep your changes';
+      return;
+    }
 
     els.saveStatus.textContent = `Saved ${new Date().toLocaleTimeString([], {
       hour: '2-digit',
@@ -506,6 +523,8 @@
   }
 
   function renderTripForm(trip) {
+    byId('tripOverview').textContent = [trip.location, trip.leaveDate && trip.returnDate
+      ? `${trip.leaveDate} – ${trip.returnDate}` : 'Choose your dates'].filter(Boolean).join(' · ');
     if (document.activeElement !== els.tripName) {
       els.tripName.value = trip.name || '';
     }
@@ -514,10 +533,21 @@
       els.location.value = trip.location || '';
     }
 
+    els.usesCheckedBag.value = String(trip.usesCheckedBag);
+    document.body.classList.toggle('noCheckedBag', !trip.usesCheckedBag);
+    byId('checkedBagHelp').textContent = trip.usesCheckedBag
+      ? 'Split quantities between your checked bag and carry-on.'
+      : 'One packing quantity per item, with no checked bag. Existing bag quantities are combined; no items are removed.';
+    els.bagFilter.hidden = !trip.usesCheckedBag;
+    if (!trip.usesCheckedBag) filters.bag = 'all';
+    els.bagFilter.value = filters.bag;
+    els.newItemChecked.disabled = !trip.usesCheckedBag;
+    els.newItemChecked.closest('div').hidden = !trip.usesCheckedBag;
+    document.querySelector('label[for="newItemCarryon"]').textContent = trip.usesCheckedBag ? 'Carry-on' : 'Quantity';
     els.leaveDate.value = trip.leaveDate || '';
     els.returnDate.value = trip.returnDate || '';
 
-    for (const key of ['backup', 'departureWearing', 'laundryDays', 'formalDays']) {
+    for (const key of ['backup', 'laundryDays', 'formalDays']) {
       if (document.activeElement !== els[key]) {
         els[key].value = wholeNumber(trip.rules[key]);
       }
@@ -556,18 +586,11 @@
   function renderProgress(trip) {
     const stats = getTripStats(trip);
 
-    els.travelDays.textContent = getHoldLuggageDays(trip);
-    els.setsNeeded.textContent = getClothingSetsNeeded(trip);
-    els.missingCount.textContent = stats.missing;
-    els.packedCount.textContent = `${stats.packed}/${stats.used}`;
     els.progressText.textContent = `${stats.percent}%`;
+    els.progressFill.parentElement.setAttribute('aria-valuenow', stats.percent);
+    els.progressFill.parentElement.setAttribute('aria-valuetext', `${stats.packed} of ${stats.used} items packed`);
     els.progressFill.style.width = `${stats.percent}%`;
 
-    els.missingCount.closest('.metric').className = `metric ${stats.missing === 0 ? 'good' : stats.missing <= 3 ? 'warn' : 'alert'
-      }`;
-
-    els.packedCount.closest('.metric').className = `metric ${stats.percent === 100 ? 'good' : ''
-      }`;
   }
 
   // ---------------------------------------------------------------------------
@@ -663,7 +686,10 @@
   // ---------------------------------------------------------------------------
 
   function renderPackingList(trip) {
+    const active = document.activeElement;
+    const focusKey = els.tables.contains(active) ? { ...active.dataset } : null;
     const visibleItems = getVisibleItems(trip);
+    const openDetails = new Set([...els.tables.querySelectorAll('details[open]')].map(detail => detail.dataset.itemDetails));
 
     els.tables.innerHTML = '';
 
@@ -677,6 +703,14 @@
       if (!categoryItems.length) continue;
 
       els.tables.appendChild(makeCategorySection(trip, category, categoryItems));
+    }
+    for (const detail of els.tables.querySelectorAll('details[data-item-details]')) {
+      detail.open = openDetails.has(detail.dataset.itemDetails);
+    }
+    if (focusKey) {
+      const replacement = [...els.tables.querySelectorAll('input, select, button, [tabindex]')].find((element) =>
+        Object.entries(focusKey).every(([key, value]) => element.dataset[key] === value));
+      replacement?.focus({ preventScroll: true });
     }
   }
 
@@ -709,11 +743,8 @@
           <thead>
             <tr>
               <th>Item</th>
-              <th class="num">Checked</th>
-              <th class="num">Carryon</th>
-              <th class="num">Total</th>
+              ${trip.usesCheckedBag ? '<th class="num">Checked bag</th><th class="num">Carry-on</th><th class="num">Total</th>' : '<th class="num">Quantity</th>'}
               <th class="pack">Packed</th>
-              <th class="ruleCol">Rule</th>
               <th class="actionsCol">Actions</th>
             </tr>
           </thead>
@@ -725,13 +756,13 @@
     const tbody = section.querySelector('tbody');
 
     for (const item of categoryItems) {
-      tbody.appendChild(makeItemRow(item));
+      tbody.appendChild(makeItemRow(item, trip));
     }
 
     return section;
   }
 
-  function makeItemRow(item) {
+  function makeItemRow(item, trip) {
     const row = document.createElement('tr');
     row.dataset.itemId = item.id;
     const used = isItemUsed(item);
@@ -747,68 +778,52 @@
       <td class="item">
         <div class="itemBox">
           <input
-            data-id="${item.id}"
+            data-id="${escapeHtml(item.id)}"
             data-field="name"
             type="text"
             value="${escapeHtml(item.name)}"
             aria-label="Item name"
           >
+          <details class="itemDetails" data-item-details="${escapeHtml(item.id)}">
+            <summary>${item.note ? 'Note & packing rule' : 'Notes & packing rule'}</summary>
+            <div class="itemDetailsBody">
           <input
             class="note"
-            data-id="${item.id}"
+            data-id="${escapeHtml(item.id)}"
             data-field="note"
             type="text"
             value="${escapeHtml(item.note)}"
             placeholder="Note"
             aria-label="Item note"
           >
+        <select data-id="${escapeHtml(item.id)}" data-field="rule" aria-label="Packing rule for ${escapeHtml(item.name)}">
+          ${Object.entries(RULES).map(([value, label]) => `
+            <option value="${value}" ${item.rule === value ? 'selected' : ''}>${label}</option>
+          `).join('')}
+        </select>
+            </div>
+          </details>
         </div>
       </td>
 
-      <td class="num">
-        <input
-          data-id="${item.id}"
-          data-field="checked"
-          type="number"
-          min="0"
-          step="1"
-          value="${wholeNumber(item.checked)}"
-        >
-      </td>
-
-      <td class="num">
-        <input
-          data-id="${item.id}"
-          data-field="carryon"
-          type="number"
-          min="0"
-          step="1"
-          value="${wholeNumber(item.carryon)}"
-        >
-      </td>
-
-      <td class="num total">${getItemTotal(item)}</td>
+      ${trip.usesCheckedBag ? `
+      <td class="num" data-label="Checked bag"><input data-id="${escapeHtml(item.id)}" data-field="checked" type="number" min="0" step="1" value="${wholeNumber(item.checked)}" aria-label="Checked bag quantity for ${escapeHtml(item.name)}"></td>
+      <td class="num" data-label="Carry-on"><input data-id="${escapeHtml(item.id)}" data-field="carryon" type="number" min="0" step="1" value="${wholeNumber(item.carryon)}" aria-label="Carry-on quantity for ${escapeHtml(item.name)}"></td>
+      <td class="num total" data-label="Total">${getItemTotal(item)}</td>` : `
+      <td class="num" data-label="Quantity"><input data-id="${escapeHtml(item.id)}" data-field="quantity" type="number" min="0" step="1" value="${getItemTotal(item)}" aria-label="Quantity for ${escapeHtml(item.name)}"></td>`}
 
       <td class="pack">
         <button
           type="button"
           class="packToggle ${item.packed ? 'isPacked' : ''}"
-          data-pack="${item.id}"
+          data-pack="${escapeHtml(item.id)}"
           aria-pressed="${item.packed}"
           ${used ? '' : 'disabled'}
         >${item.packed ? '✓ Packed' : 'Pack'}</button>
       </td>
 
-      <td class="ruleCol">
-        <select data-id="${item.id}" data-field="rule">
-          ${Object.entries(RULES).map(([value, label]) => `
-            <option value="${value}" ${item.rule === value ? 'selected' : ''}>${label}</option>
-          `).join('')}
-        </select>
-      </td>
-
       <td class="actionsCol">
-        <button data-delete="${item.id}" class="danger slim">Delete</button>
+        <button data-delete="${escapeHtml(item.id)}" class="danger slim">Delete</button>
       </td>
     `;
 
@@ -838,6 +853,7 @@
 
     renderTripPicker();
     renderTripForm(currentTrip);
+    renderDestinationTools(currentTrip);
     renderRulesPanel();
     renderDateHint(currentTrip);
     renderProgress(currentTrip);
@@ -890,6 +906,7 @@
     const currentTrip = getCurrentTrip();
 
     currentTrip.rules[ruleName] = value;
+    if (ruleName === 'international') currentTrip.internationalMode = 'manual';
     recalculateTrip(currentTrip);
 
     save();
@@ -902,7 +919,14 @@
 
     if (!item) return;
 
-    if (field === 'checked' || field === 'carryon') {
+    const previousTotal = getItemTotal(item);
+    if (field === 'quantity') {
+      const quantity = wholeNumber(value);
+      // Retain the prior bag split where possible if the user later uses a checked bag.
+      item.checked = Math.min(wholeNumber(item.checked), quantity);
+      item.carryon = quantity - item.checked;
+      item.rule = 'manual';
+    } else if (field === 'checked' || field === 'carryon') {
       item[field] = wholeNumber(value);
       item.rule = 'manual';
     } else if (field === 'packed') {
@@ -914,7 +938,7 @@
       item[field] = value;
     }
 
-    if (!isItemUsed(item)) {
+    if (!isItemUsed(item) || getItemTotal(item) !== previousTotal) {
       item.packed = false;
     }
 
@@ -984,7 +1008,7 @@
   function markVisibleItemsAs(packed) {
     let count = 0;
 
-    for (const item of getVisibleItems()) {
+    for (const item of getVisibleItems().filter((item) => !getCurrentTrip().collapsedCats[item.category])) {
       if (isItemUsed(item)) {
         item.packed = packed;
         count += 1;
@@ -1001,6 +1025,7 @@
     const newTrip = makeDefaultTrip();
 
     Object.assign(newTrip, {
+      homeCountry: getCurrentTrip().homeCountry,
       name: 'New trip',
       location: '',
       leaveDate: '',
@@ -1065,7 +1090,7 @@
       return;
     }
 
-    const checked = wholeNumber(els.newItemChecked.value);
+    const checked = getCurrentTrip().usesCheckedBag ? wholeNumber(els.newItemChecked.value) : 0;
     const carryon = wholeNumber(els.newItemCarryon.value);
 
     getCurrentTrip().items.push({
@@ -1142,15 +1167,24 @@
     showToast('Save file exported');
   }
 
+  let modalOpener = null;
+
   function openJsonModal() {
+    modalOpener = document.activeElement;
     els.jsonText.value = JSON.stringify(state, null, 2);
     els.jsonModal.classList.add('open');
+    document.querySelector('main').inert = true;
+    document.querySelector('header').inert = true;
     els.jsonText.focus();
     els.jsonText.select();
   }
 
   function closeJsonModal() {
+    if (!els.jsonModal.classList.contains('open')) return;
     els.jsonModal.classList.remove('open');
+    document.querySelector('main').inert = false;
+    document.querySelector('header').inert = false;
+    modalOpener?.focus();
   }
 
   async function copyJsonText() {
@@ -1169,7 +1203,241 @@
   // Event wiring
   // ---------------------------------------------------------------------------
 
+  // Destination searches start after a pause in typing. Keep transient results out of saved trip data.
+  let destinationSearch = { key: '', message: '', results: [], loading: false };
+  let weatherResult = { key: '', message: '', days: [], loading: false };
+  let searchRequest = 0;
+  let destinationTimer = null;
+  let weatherRequest = 0;
+
+  function validDestination(place) {
+    return place && typeof place.name === 'string' &&
+      typeof place.country_code === 'string' && /^[A-Z]{2}$/.test(place.country_code) &&
+      Number.isFinite(place.latitude) && Math.abs(place.latitude) <= 90 &&
+      Number.isFinite(place.longitude) && Math.abs(place.longitude) <= 180;
+  }
+
+  function destinationKey(trip) {
+    return JSON.stringify([trip.id, trip.location]);
+  }
+
+  function weatherKey(trip) {
+    return JSON.stringify([destinationKey(trip), trip.destination, trip.leaveDate, trip.returnDate]);
+  }
+
+  function applyInternationalDetection(trip) {
+    if (trip.internationalMode !== 'auto' || !trip.homeCountry || !validDestination(trip.destination)) return false;
+    trip.rules.international = trip.homeCountry !== trip.destination.country_code;
+    recalculateTrip(trip);
+    return true;
+  }
+
+  function destinationLabel(place) {
+    return [place.name, place.admin1, place.country || place.country_code].filter(Boolean).join(', ');
+  }
+
+  async function fetchLookup(url) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+    try {
+      const response = await fetch(url, { signal: controller.signal, credentials: 'omit' });
+      if (!response.ok) throw new Error('Lookup failed');
+      return await response.json();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function findDestination() {
+    const trip = getCurrentTrip();
+    const key = destinationKey(trip);
+    const request = ++searchRequest;
+    const query = trip.location.trim();
+    destinationSearch = { key, results: [], loading: false, message: '' };
+    if (query.length < 2) {
+      destinationSearch.message = 'Type at least two characters to search for a city or postal code.';
+      renderDestinationTools(trip);
+      return;
+    }
+    destinationSearch.loading = true;
+    destinationSearch.message = 'Finding matching destinations…';
+    renderDestinationTools(trip);
+    try {
+      const data = await fetchLookup(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=10&language=en&format=json`);
+      if (request !== searchRequest || key !== destinationKey(getCurrentTrip())) return;
+      destinationSearch.results = Array.isArray(data.results) ? data.results.filter(validDestination) : [];
+      destinationSearch.message = destinationSearch.results.length
+        ? 'Choose the matching place below to confirm its country.'
+        : 'No matches. Try a city or postal code, optionally followed by a country or region.';
+    } catch {
+      if (request !== searchRequest || key !== destinationKey(getCurrentTrip())) return;
+      destinationSearch.message = 'Could not look up the destination. Check your connection and press Enter in Location to retry. Manual packing rules still work.';
+    } finally {
+      if (request === searchRequest) destinationSearch.loading = false;
+      renderDestinationTools(getCurrentTrip());
+    }
+  }
+
+  function forecastDays(data, leaveDate, returnDate) {
+    const daily = data.daily;
+    if (!Array.isArray(daily?.time)) throw new Error('Missing forecast');
+    return daily.time.flatMap((date, index) => {
+      const low = daily.temperature_2m_min?.[index];
+      const high = daily.temperature_2m_max?.[index];
+      const rain = daily.precipitation_probability_max?.[index];
+      if (date < leaveDate || date > returnDate || !Number.isFinite(low) || !Number.isFinite(high)) return [];
+      return [{ date, low, high, rain: Number.isFinite(rain) ? rain : null }];
+    });
+  }
+
+  async function checkWeather() {
+    const trip = getCurrentTrip();
+    const key = weatherKey(trip);
+    const request = ++weatherRequest;
+    weatherResult = { key, days: [], loading: false, message: '' };
+    if (!validDestination(trip.destination) || !parseIsoDate(trip.leaveDate) || !parseIsoDate(trip.returnDate) || trip.returnDate < trip.leaveDate) {
+      weatherResult.message = 'Confirm a destination and choose valid trip dates first.';
+      renderDestinationTools(trip);
+      return;
+    }
+    weatherResult.loading = true;
+    weatherResult.message = 'Checking the forecast for your trip dates…';
+    renderDestinationTools(trip);
+    try {
+      const place = trip.destination;
+      const data = await fetchLookup(`https://api.open-meteo.com/v1/forecast?latitude=${place.latitude}&longitude=${place.longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&temperature_unit=celsius&timezone=auto&forecast_days=16`);
+      if (request !== weatherRequest || key !== weatherKey(getCurrentTrip())) return;
+      weatherResult.days = forecastDays(data, trip.leaveDate, trip.returnDate);
+      const expected = getPackingDays(trip) + 1;
+      weatherResult.message = weatherResult.days.length
+        ? `${weatherResult.days.length} of ${expected} trip days available. Temperatures in °C; rain is the chance of precipitation. Checked ${new Date().toLocaleString()}.`
+        : 'No forecast available for these trip dates. Forecasts cover today and up to the next 15 days, not past trips or dates further ahead.';
+    } catch {
+      if (request !== weatherRequest || key !== weatherKey(getCurrentTrip())) return;
+      weatherResult.message = 'Could not load the weather. Check your connection and try again.';
+    } finally {
+      if (request === weatherRequest) weatherResult.loading = false;
+      renderDestinationTools(getCurrentTrip());
+    }
+  }
+
+  function renderDestinationTools(trip) {
+    byId('homeCountry').value = trip.homeCountry;
+    byId('internationalMode').value = trip.internationalMode;
+    const search = destinationSearch.key === destinationKey(trip) ? destinationSearch : null;
+    byId('destinationStatus').textContent = search?.message || (trip.destination
+      ? `Confirmed destination: ${destinationLabel(trip.destination)}`
+      : 'Type a city and choose a match. Its country is filled in automatically.');
+    byId('destinationChoices').hidden = !search?.results.length;
+    const choices = byId('destinationChoices');
+    const resultsKey = JSON.stringify(search?.results || []);
+    if (choices.dataset.resultsKey !== resultsKey) {
+      choices.innerHTML = (search?.results || []).map((place, index) =>
+        `<button type="button" data-destination-index="${index}">${escapeHtml(destinationLabel(place))}</button>`).join('');
+      choices.dataset.resultsKey = resultsKey;
+    }
+    byId('internationalStatus').textContent = trip.internationalMode === 'manual'
+      ? `Manual setting: international items ${trip.rules.international ? 'on' : 'off'}. Change this in Packing rules, or choose automatic detection above.`
+      : !trip.homeCountry || !trip.destination
+        ? 'Choose your home country and confirm a destination. Your existing international setting stays unchanged until both are known.'
+        : `${trip.rules.international ? 'International' : 'Domestic'} relative to your home country — international items ${trip.rules.international ? 'on' : 'off'}. This compares country/territory codes; you can override it in Packing rules.`;
+    const weather = weatherResult.key === weatherKey(trip) ? weatherResult : null;
+    byId('weatherBtn').disabled = !trip.destination || Boolean(weather?.loading);
+    byId('weatherStatus').textContent = weather?.message || 'Confirm a destination and check weather for your trip dates. Forecasts are available up to 16 days ahead.';
+    byId('weatherDays').innerHTML = weather?.days.length ? `<ul class="weatherList">${weather.days.map(day =>
+      `<li><strong>${escapeHtml(day.date)}</strong><span>${Math.round(day.low)}–${Math.round(day.high)} °C</span><span>${day.rain === null ? 'Rain: unavailable' : `${Math.round(day.rain)}% rain`}</span></li>`).join('')}</ul>` : '';
+  }
+
+  function wireDestinationTools() {
+    const codes = 'AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW'.split(' ');
+    const names = typeof Intl.DisplayNames === 'function' ? new Intl.DisplayNames(['en'], { type: 'region' }) : null;
+    const countries = codes.map(code => [code, names?.of(code) || code]).sort((a, b) => a[1].localeCompare(b[1]));
+    fillSelect(byId('homeCountry'), [['', 'Choose home country…'], ...countries], '');
+    els.location.addEventListener('keydown', event => {
+      if (event.isComposing) return;
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        clearTimeout(destinationTimer);
+        findDestination();
+      } else if (event.key === 'ArrowDown') {
+        const first = byId('destinationChoices').querySelector('button');
+        if (!byId('destinationChoices').hidden && first) {
+          event.preventDefault();
+          first.focus();
+        }
+      } else if (event.key === 'Escape') {
+        dismissDestinationSearch();
+      }
+    });
+    byId('destinationChoices').addEventListener('keydown', event => {
+      const buttons = [...byId('destinationChoices').querySelectorAll('button')];
+      const index = buttons.indexOf(event.target);
+      if (event.key === 'Escape') {
+        dismissDestinationSearch();
+        els.location.focus();
+      } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const next = index + (event.key === 'ArrowDown' ? 1 : -1);
+        if (next < 0) els.location.focus();
+        else buttons[Math.min(next, buttons.length - 1)]?.focus();
+      }
+    });
+    byId('weatherBtn').addEventListener('click', checkWeather);
+    for (const field of ['homeCountry', 'internationalMode']) {
+      byId(field).addEventListener('change', event => {
+        const trip = getCurrentTrip();
+        trip[field] = event.target.value;
+        applyInternationalDetection(trip);
+        save();
+        render();
+      });
+    }
+    byId('destinationChoices').addEventListener('click', event => {
+      const button = event.target.closest('[data-destination-index]');
+      if (button) selectDestination(Number(button.dataset.destinationIndex));
+    });
+  }
+
+  function dismissDestinationSearch() {
+    clearTimeout(destinationTimer);
+    searchRequest += 1;
+    destinationSearch = { key: '', results: [], loading: false, message: '' };
+    renderDestinationTools(getCurrentTrip());
+  }
+
+  function scheduleDestinationSearch() {
+    dismissDestinationSearch();
+    const trip = getCurrentTrip();
+    if (trip.location.trim().length < 2) return;
+    const key = destinationKey(trip);
+    destinationTimer = setTimeout(() => {
+      if (key === destinationKey(getCurrentTrip())) findDestination();
+    }, 400);
+  }
+
+  function selectDestination(index) {
+    const trip = getCurrentTrip();
+    if (destinationSearch.key !== destinationKey(trip)) return;
+    const place = destinationSearch.results[index];
+    if (!validDestination(place)) return;
+    trip.destination = { name: place.name, admin1: place.admin1 || '', country: place.country || '', country_code: place.country_code, latitude: place.latitude, longitude: place.longitude };
+    trip.location = destinationLabel(place);
+    els.location.value = trip.location;
+    dismissDestinationSearch();
+    applyInternationalDetection(trip);
+    save();
+    render();
+    els.location.focus();
+    if (trip.leaveDate && trip.returnDate) checkWeather();
+  }
+
   function wireTripControls() {
+    els.usesCheckedBag.addEventListener('change', () => {
+      getCurrentTrip().usesCheckedBag = els.usesCheckedBag.value === 'true';
+      save();
+      render();
+      showToast(getCurrentTrip().usesCheckedBag ? 'Checked bag and carry-on quantities shown' : 'Bag quantities combined. Your packing list is preserved.');
+    });
     els.tripPicker.addEventListener('change', (event) => {
       state.currentTripId = event.target.value;
       save();
@@ -1184,6 +1452,8 @@
 
     els.location.addEventListener('input', (event) => {
       getCurrentTrip().location = event.target.value;
+      getCurrentTrip().destination = null;
+      scheduleDestinationSearch();
       save();
       render();
     });
@@ -1216,7 +1486,7 @@
   }
 
   function wireRuleControls() {
-    for (const key of ['backup', 'departureWearing', 'laundryDays', 'formalDays']) {
+    for (const key of ['backup', 'laundryDays', 'formalDays']) {
       els[key].addEventListener('input', (event) => {
         updateTripRule(key, wholeNumber(event.target.value));
       });
@@ -1248,7 +1518,7 @@
     });
 
     els.rulesHead.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter' && event.key !== ' ') {
+      if (event.target !== els.rulesHead || (event.key !== 'Enter' && event.key !== ' ')) {
         return;
       }
 
@@ -1400,6 +1670,18 @@
     });
 
     document.addEventListener('keydown', (event) => {
+      if (event.key === 'Tab' && els.jsonModal.classList.contains('open')) {
+        const controls = [...els.jsonModal.querySelectorAll('button, textarea')];
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
       if (event.key === 'Escape') {
         closeJsonModal();
       }
@@ -1418,6 +1700,17 @@
   }
 
   function wireEvents() {
+    const tripMenu = document.querySelector('.tripMenu');
+    document.addEventListener('click', (event) => {
+      if (!tripMenu.contains(event.target) || event.target.closest('.menuActions button')) tripMenu.open = false;
+    });
+    tripMenu.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        tripMenu.open = false;
+        tripMenu.querySelector('summary').focus();
+      }
+    });
+    wireDestinationTools();
     wireTripControls();
     wireRuleControls();
     wireCalendarControls();

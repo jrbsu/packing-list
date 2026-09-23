@@ -18,13 +18,25 @@
           <div class="small" id="saveStatus">Autosaves in this browser</div>
         </div>
       </div>
+      <div class="headerProgress">
+        <div class="bar" role="progressbar" aria-label="Packing complete" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div id="progressFill" class="fill"></div>
+        </div>
+        <span id="progressText">0%</span>
+      </div>
       <div class="actions">
         <select id="tripPicker" class="tripSelect" aria-label="Choose saved trip"></select>
-        <button id="newTripBtn">New trip</button>
+        <button id="newTripBtn" class="primary">New trip</button>
+        <details class="tripMenu">
+          <summary>More</summary>
+          <div class="menuActions">
         <button id="duplicateTripBtn">Duplicate</button>
         <button id="exportBtn">Export</button>
         <button id="importBtn">Import</button>
         <button id="jsonBtn" class="ghost">Save text</button>
+            <button id="deleteTripBtn" class="danger slim">Delete trip</button>
+          </div>
+        </details>
         <input id="importFile" class="hidden" type="file" accept="application/json,.json">
       </div>
     </div>
@@ -33,23 +45,19 @@
   <main class="page">
     <section class="grid">
       <div class="leftStack">
-        <article class="card">
-          <div class="cardHead">
-            <div>
-              <h2>Trip details</h2>
-              <div class="tiny">Type dates, or choose them directly on the calendar.</div>
-            </div>
-            <button id="deleteTripBtn" class="danger slim">Delete</button>
-          </div>
+        <details class="card tripDetails" open>
+          <summary class="sectionSummary"><span>Trip details</span><span id="tripOverview" class="tiny"></span></summary>
           <div class="cardBody">
             <div class="fields">
               <div>
                 <label class="lbl" for="tripName">Trip</label>
                 <input id="tripName" type="text" placeholder="e.g. Disney">
               </div>
-              <div>
+              <div class="locationSearch">
                 <label class="lbl" for="location">Location</label>
-                <input id="location" type="text" placeholder="e.g. Anaheim, CA">
+                <input id="location" type="text" placeholder="Search a city or postal code…" autocomplete="off" aria-describedby="destinationStatus" aria-controls="destinationChoices">
+                <p id="destinationStatus" class="tiny" role="status"></p>
+                <div id="destinationChoices" class="destinationSuggestions" aria-label="Matching destinations" hidden></div>
               </div>
               <div>
                 <label class="lbl" for="leaveDate">Leave date</label>
@@ -60,19 +68,139 @@
                 <input id="returnDate" type="date">
               </div>
             </div>
+            <details class="secondarySettings">
+              <summary>Bags, international travel &amp; weather</summary>
+              <div class="secondaryBody">
+              <div class="travelMode">
+                <label class="lbl" for="usesCheckedBag">Using a checked bag?</label>
+                <select id="usesCheckedBag" aria-describedby="checkedBagHelp">
+                  <option value="true">Using a checked bag</option>
+                  <option value="false">Not using a checked bag</option>
+                </select>
+                <p id="checkedBagHelp" class="tiny"></p>
+              </div>
+              <div class="destinationTools">
+                <div class="fields">
+                  <div>
+                    <label class="lbl" for="homeCountry">Home country / territory</label>
+                    <select id="homeCountry"></select>
+                  </div>
+                  <div>
+                    <label class="lbl" for="internationalMode">International items</label>
+                    <select id="internationalMode">
+                      <option value="auto">Automatic by country</option>
+                      <option value="manual">Set manually in packing rules</option>
+                    </select>
+                  </div>
+                </div>
+                <p id="internationalStatus" class="tiny"></p>
+                <button id="weatherBtn" class="slim" type="button">Check trip weather</button>
+                <p id="weatherStatus" class="tiny" role="status"></p>
+                <div id="weatherDays"></div>
+                <p class="tiny">Location and weather lookups use <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a> and <a href="https://www.geonames.org/" target="_blank" rel="noopener noreferrer">GeoNames</a>. Weather does not change your packing rules.</p>
+              </div>
+              </div>
+            </details>
           </div>
-        </article>
+        </details>
 
-        <section id="rulesCard" class="card configCard collapsed">
+      </div>
+      <div class="leftStack planningTools">
+      <details class="card calendarCard">
+        <summary class="sectionSummary">Choose dates on the calendar</summary>
+        <div class="cardHead">
+          <div>
+            <h2>Calendar</h2>
+            <div class="tiny" id="dateHint">Click a date to set your departure, then click another date for your return.
+            </div>
+          </div>
+          <div class="calControls">
+            <button id="prevMonthBtn" class="icon" aria-label="Previous month">‹</button>
+            <div id="calTitle" class="calTitle">Month</div>
+            <button id="nextMonthBtn" class="icon" aria-label="Next month">›</button>
+          </div>
+        </div>
+        <div class="cardBody">
+          <div id="calendar" class="calendar"></div>
+          <div class="legend">
+            <span class="pill"><span class="dot leave"></span>departure</span>
+            <span class="pill"><span class="dot away"></span>in luggage</span>
+            <span class="pill"><span class="dot return"></span>return</span>
+            <button id="clearDatesBtn" class="slim ghost">Clear dates</button>
+          </div>
+        </div>
+      </details>
+
+
+      </div>
+    </section>
+
+
+
+    <section class="card listCard">
+      <div class="cardHead">
+        <div>
+          <h2>Packing list</h2>
+          <div class="tiny">Pack each item as you go. Open item details for notes and packing rules.</div>
+        </div>
+        <div class="actions">
+          <button id="packVisibleBtn" class="slim primary">Pack visible</button>
+          <button id="unpackVisibleBtn" class="slim">Unpack visible</button>
+          <button id="resetPackedBtn" class="slim danger">Clear checks</button>
+        </div>
+      </div>
+
+      <div class="cardBody">
+        <div class="toolbar">
+          <input id="searchItems" aria-label="Search items" type="text" placeholder="Search items…">
+          <select id="categoryFilter" aria-label="Filter category"></select>
+          <select id="bagFilter" aria-label="Filter bag">
+            <option value="all">All bags</option>
+            <option value="checked">Checked bag</option>
+            <option value="carryon">Carry-on</option>
+          </select>
+          <label class="checkline">
+            <input id="missingOnly" type="checkbox"> Missing only
+          </label>
+        </div>
+      </div>
+
+      <div id="tables"></div>
+
+      <div class="add">
+        <div>
+          <label class="lbl" for="newItemName">Add item</label>
+          <input id="newItemName" type="text" placeholder="e.g. Sunglasses">
+        </div>
+        <div>
+          <label class="lbl" for="newItemCategory">Category</label>
+          <select id="newItemCategory"></select>
+        </div>
+        <div>
+          <label class="lbl" for="newItemChecked">Checked bag</label>
+          <input id="newItemChecked" type="number" min="0" step="1" value="0">
+        </div>
+        <div>
+          <label class="lbl" for="newItemCarryon">Carry-on</label>
+          <input id="newItemCarryon" type="number" min="0" step="1" value="1">
+        </div>
+        <div>
+          <label class="lbl" for="newItemRule">Rule</label>
+          <select id="newItemRule"></select>
+        </div>
+        <button id="addItemBtn" class="primary">Add</button>
+      </div>
+    </section>
+  </main>
+
+        <section id="rulesCard" class="card configCard rulesDock collapsed">
           <div id="rulesHead" class="cardHead collapsibleHead" role="button" tabindex="0" aria-controls="rulesBody"
             aria-expanded="false">
             <div>
               <h2>Packing rules</h2>
-              <div class="tiny">Expandable config. Automatic items recalculate from these rules; manual items keep your
-                counts.</div>
+              <div class="tiny">Adjust clothing, laundry, and extras.</div>
             </div>
             <div class="headActions">
-              <button id="recalculateBtn" class="slim">Recalculate</button>
               <button id="rulesToggle" class="icon ghost" aria-label="Toggle packing rules">
                 <span class="collapseIcon">⌄</span>
               </button>
@@ -80,30 +208,25 @@
           </div>
 
           <div id="rulesBody" class="cardBody rulesBody">
+            <div class="rulesDockActions">
+              <button id="recalculateBtn" class="slim">Recalculate quantities</button>
+            </div>
             <div class="rules">
               <div class="rule">
                 <div>
                   <div class="ruleTitle">Backup set</div>
-                  <div class="ruleHelp">Extra basic clothes, usually in carryon.</div>
+                  <div class="ruleHelp">Extra basic clothes, included in your packing quantities.</div>
                 </div>
-                <input id="backup" type="number" min="0" step="1">
-              </div>
-
-              <div class="rule">
-                <div>
-                  <div class="ruleTitle">Departure day wearing</div>
-                  <div class="ruleHelp">Shown for planning, not packed.</div>
-                </div>
-                <input id="departureWearing" type="number" min="0" step="1">
+                <input id="backup" aria-label="Backup sets" type="number" min="0" step="1">
               </div>
 
               <div class="rule">
                 <div>
                   <div class="ruleTitle">Laundry days</div>
-                  <div class="ruleHelp">Splits the trip into laundry cycles. Example: 7 hold-luggage days + 1 laundry
+                  <div class="ruleHelp">Splits the trip into laundry cycles. Example: 7 days after departure + 1 laundry
                     day = 4 sets.</div>
                 </div>
-                <input id="laundryDays" type="number" min="0" step="1">
+                <input id="laundryDays" aria-label="Laundry days" type="number" min="0" step="1">
               </div>
 
               <div class="rule">
@@ -111,7 +234,7 @@
                   <div class="ruleTitle">Formal days</div>
                   <div class="ruleHelp">Adds formal-rule items.</div>
                 </div>
-                <input id="formalDays" type="number" min="0" step="1">
+                <input id="formalDays" aria-label="Formal days" type="number" min="0" step="1">
               </div>
 
               <label class="rule toggleRule">
@@ -144,112 +267,6 @@
             </div>
           </div>
         </section>
-      </div>
-
-      <article class="card">
-        <div class="cardHead">
-          <div>
-            <h2>Calendar</h2>
-            <div class="tiny" id="dateHint">Click a date to set your departure, then click another date for your return.
-            </div>
-          </div>
-          <div class="calControls">
-            <button id="prevMonthBtn" class="icon" aria-label="Previous month">‹</button>
-            <div id="calTitle" class="calTitle">Month</div>
-            <button id="nextMonthBtn" class="icon" aria-label="Next month">›</button>
-          </div>
-        </div>
-        <div class="cardBody">
-          <div id="calendar" class="calendar"></div>
-          <div class="legend">
-            <span class="pill"><span class="dot leave"></span>departure</span>
-            <span class="pill"><span class="dot away"></span>in luggage</span>
-            <span class="pill"><span class="dot return"></span>return</span>
-            <button id="clearDatesBtn" class="slim ghost">Clear dates</button>
-          </div>
-        </div>
-      </article>
-
-      <aside class="card summary">
-        <div class="cardHead">
-          <div>
-            <h2>Progress</h2>
-            <div class="tiny">The missing number is the one to beat.</div>
-          </div>
-          <button id="packVisibleBtn" class="slim primary">Pack visible</button>
-        </div>
-        <div class="cardBody">
-          <div class="metrics">
-            <div class="metric"><span>Hold luggage days</span><strong id="travelDays">0</strong></div>
-            <div class="metric"><span>Clothing sets</span><strong id="setsNeeded">0</strong></div>
-            <div class="metric"><span>Missing</span><strong id="missingCount">0</strong></div>
-            <div class="metric"><span>Packed</span><strong id="packedCount">0/0</strong></div>
-          </div>
-          <div class="progressTop">
-            <span>Checklist complete</span>
-            <span id="progressText">0%</span>
-          </div>
-          <div class="bar">
-            <div id="progressFill" class="fill"></div>
-          </div>
-        </div>
-      </aside>
-    </section>
-
-    <section class="card listCard">
-      <div class="cardHead">
-        <div>
-          <h2>Packing list</h2>
-          <div class="tiny">Edit quantities, notes, categories, and whether each item applies to this trip.</div>
-        </div>
-        <div class="actions">
-          <button id="unpackVisibleBtn" class="slim">Unpack visible</button>
-          <button id="resetPackedBtn" class="slim danger">Clear checks</button>
-        </div>
-      </div>
-
-      <div class="cardBody">
-        <div class="toolbar">
-          <input id="searchItems" type="text" placeholder="Search items…">
-          <select id="categoryFilter" aria-label="Filter category"></select>
-          <select id="bagFilter" aria-label="Filter bag">
-            <option value="all">All bags</option>
-            <option value="checked">Checked bag</option>
-            <option value="carryon">Carryon</option>
-          </select>
-          <label class="checkline">
-            <input id="missingOnly" type="checkbox"> Missing only
-          </label>
-        </div>
-      </div>
-
-      <div id="tables"></div>
-
-      <div class="add">
-        <div>
-          <label class="lbl" for="newItemName">Add item</label>
-          <input id="newItemName" type="text" placeholder="e.g. Sunglasses">
-        </div>
-        <div>
-          <label class="lbl" for="newItemCategory">Category</label>
-          <select id="newItemCategory"></select>
-        </div>
-        <div>
-          <label class="lbl" for="newItemChecked">Checked</label>
-          <input id="newItemChecked" type="number" min="0" step="1" value="0">
-        </div>
-        <div>
-          <label class="lbl" for="newItemCarryon">Carryon</label>
-          <input id="newItemCarryon" type="number" min="0" step="1" value="1">
-        </div>
-        <div>
-          <label class="lbl" for="newItemRule">Rule</label>
-          <select id="newItemRule"></select>
-        </div>
-        <button id="addItemBtn" class="primary">Add</button>
-      </div>
-    </section>
-  </main>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
