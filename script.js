@@ -256,7 +256,7 @@
       currentTripId,
       trips,
       ui: {
-        rulesOpen: true,
+        rulesOpen: false,
       },
     };
   }
@@ -282,7 +282,7 @@
       currentTripId: trip.id,
       trips: [trip],
       ui: {
-        rulesOpen: true,
+        rulesOpen: false,
       },
     };
   }
@@ -687,8 +687,8 @@
     const active = document.activeElement;
     const focusKey = els.tables.contains(active) ? { ...active.dataset } : null;
     const visibleItems = getVisibleItems(trip);
-    const closedDetails = new Set([...els.tables.querySelectorAll('details[data-item-details]')]
-      .filter(detail => !detail.open).map(detail => detail.dataset.itemDetails));
+    const openDetails = new Set([...els.tables.querySelectorAll('details[open]')]
+      .map(detail => detail.dataset.itemDetails));
 
     els.tables.innerHTML = '';
 
@@ -704,7 +704,7 @@
       els.tables.appendChild(makeCategorySection(trip, category, categoryItems));
     }
     for (const detail of els.tables.querySelectorAll('details[data-item-details]')) {
-      detail.open = !closedDetails.has(detail.dataset.itemDetails);
+      detail.open = openDetails.has(detail.dataset.itemDetails);
     }
     if (focusKey) {
       const replacement = [...els.tables.querySelectorAll('input, select, button, [tabindex]')].find((element) =>
@@ -783,7 +783,7 @@
             value="${escapeHtml(item.name)}"
             aria-label="Item name"
           >
-          <details class="itemDetails" data-item-details="${escapeHtml(item.id)}" open>
+          <details class="itemDetails" data-item-details="${escapeHtml(item.id)}">
             <summary>${item.note ? 'Note & packing rule' : 'Notes & packing rule'}</summary>
             <div class="itemDetailsBody">
           <input
