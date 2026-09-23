@@ -18,6 +18,7 @@
     --shadow: 0 18px 45px rgba(15, 23, 42, .09);
     --radius: 18px;
     --radius2: 12px;
+    --card-inset: 1rem;
     --focus: 0 0 0 4px rgba(21, 94, 239, .16)
 }
 
@@ -237,7 +238,7 @@ h2 {
 }
 
 .cardHead {
-    padding: 1rem 1rem .75rem;
+    padding: 1rem var(--card-inset);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -246,7 +247,7 @@ h2 {
 }
 
 .cardBody {
-    padding: 1rem
+    padding: 1rem var(--card-inset)
 }
 
 .fields {
@@ -552,7 +553,7 @@ label.lbl {
     grid-template-columns: minmax(180px, 1fr) 10rem 7.2rem 7.2rem 9rem auto;
     gap: .5rem;
     align-items: end;
-    padding: .85rem 1rem;
+    padding: .85rem var(--card-inset);
     border-top: 1px solid var(--line);
     background: #f8fafc
 }
@@ -566,7 +567,7 @@ label.lbl {
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    padding: 1rem;
+    padding: .65rem var(--card-inset);
     background: #fff;
     transition: .12s
 }
@@ -597,8 +598,9 @@ label.lbl {
 }
 
 .catToggle {
-    width: 2.1rem;
-    height: 2.1rem;
+    width: 2.75rem;
+    height: 2.75rem;
+    flex-shrink: 0;
     padding: 0;
     display: grid;
     place-items: center
@@ -914,6 +916,8 @@ tr.packed {
 
 @media(max-width:560px) {
 
+    :root { --card-inset: .8rem; }
+
     .page,
     .headerInner {
         padding-inline: .75rem
@@ -980,9 +984,39 @@ body { background: var(--bg); }
 .locationSearch { grid-column: auto; }
 summary { cursor: pointer; }
 summary:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; border-radius: 8px; }
-.sectionSummary { padding: 1rem; font-weight: 700; }
-.sectionSummary .tiny { display: block; margin: .4rem 0 0 1rem; font-weight: 400; overflow-wrap: anywhere; }
-.tripDetails[open] > summary { border-bottom: 1px solid var(--line); }
+.sectionSummary {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  min-height: 3.75rem;
+  padding: .85rem var(--card-inset);
+  font-weight: 700;
+  list-style: none;
+}
+.sectionSummary::-webkit-details-marker { display: none; }
+.sectionSummary::after {
+  content: '';
+  width: .45rem;
+  height: .45rem;
+  flex-shrink: 0;
+  margin-left: auto;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(-45deg);
+}
+details[open] > .sectionSummary::after { transform: rotate(45deg); }
+.sectionSummary > span:first-child { flex-shrink: 0; }
+.sectionSummary .tiny {
+  min-width: 0;
+  margin: 0;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sectionSummary .tiny:empty { display: none; }
+.tripDetails[open] > summary,
+.calendarCard[open] > summary { border-bottom: 1px solid var(--line); }
 .secondarySettings { border-top: 1px solid var(--line); margin-top: 1rem; padding-top: .85rem; }
 .secondarySettings > summary { color: var(--accent); font-size: .88rem; font-weight: 700; }
 .secondaryBody { padding-top: 1rem; }
@@ -1079,7 +1113,7 @@ th { position: static; }
   box-shadow: 0 8px 32px rgba(15, 23, 42, .16);
 }
 .rulesDock.collapsed { width: auto; }
-.rulesDock .cardHead { border-bottom: 0; flex-wrap: nowrap; }
+.rulesDock .cardHead { padding: .65rem var(--card-inset); border-bottom: 0; flex-wrap: nowrap; }
 .rulesDock .cardHead .tiny { display: none; }
 .rulesDock .rulesBody {
   max-height: calc(100vh - 10rem);
