@@ -661,6 +661,8 @@
     const todayIso = toIsoDate(new Date());
     const leaveDate = parseIsoDate(trip.leaveDate);
     const returnDate = parseIsoDate(trip.returnDate);
+    const forecast = new Map((weatherResult.key === weatherKey(trip) ? weatherResult.days : [])
+      .map(day => [day.date, day]));
 
     for (let cellIndex = 0; cellIndex < 42; cellIndex += 1) {
       const date = new Date(calendarStart);
@@ -700,10 +702,21 @@
       }
 
       const tag = getCalendarDateTag(date, dateIso, trip, leaveDate, returnDate);
+      const day = forecast.get(dateIso);
+      const notes = day ? weatherNotes(day) : [];
+      let weatherMarkup = '';
+      if (day) {
+        const [kind, condition] = weatherCondition(day.code);
+        const summary = `${condition}, ${Math.round(day.low)}–${Math.round(day.high)} °C, ${day.rain === null ? 'rain unavailable' : `${Math.round(day.rain)}% rain`}${notes.length ? `. ${notes.map(note => note.label).join('. ')}` : ''}`;
+        button.ariaLabel += `. ${summary}`;
+        button.title = summary;
+        weatherMarkup = `<span class="dayWeather">${weatherIcon(kind)}${renderWeatherNotes(notes)}</span>`;
+      }
 
       button.innerHTML = `
         <span class="dayNo">${date.getDate()}</span>
         ${tag ? `<span class="dayTag">${tag}</span>` : ''}
+        ${weatherMarkup}
       `;
 
       els.calendar.appendChild(button);
@@ -1323,6 +1336,18 @@
     }
   }
 
+  function weatherNotes(day) {
+    const prefs = preferences();
+    const notes = [];
+    if (day.high >= prefs.hotTemperature) notes.push({ kind: 'hot', label: 'Hot' });
+    if (day.rain !== null && day.rain >= prefs.rainProbability) notes.push({ kind: 'rain', label: 'Bring a jacket' });
+    return notes;
+  }
+
+  function renderWeatherNotes(notes) {
+    return notes.map(note => `<small class="weatherBadge ${note.kind}Badge">${note.label}</small>`).join('');
+  }
+
   function weatherDecision(trip, days) {
     const prefs = preferences();
     const complete = days.length === getPackingDays(trip) + 1;
@@ -1443,6 +1468,7 @@
     const key = weatherKey(trip);
     const request = ++weatherRequest;
     weatherResult = { key, days: [], loading: false, message: '' };
+    renderCalendar(trip);
     if (!validDestination(trip.destination) || !parseIsoDate(trip.leaveDate) || !parseIsoDate(trip.returnDate) || trip.returnDate < trip.leaveDate) {
       weatherResult.message = 'Confirm a destination and choose valid trip dates first.';
       renderDestinationTools(trip);
@@ -1469,6 +1495,7 @@
     } finally {
       if (request === weatherRequest) weatherResult.loading = false;
       renderDestinationTools(getCurrentTrip());
+      renderCalendar(getCurrentTrip());
     }
   }
 
@@ -1505,12 +1532,14 @@
     byId('weatherRulesStatus').textContent = trip.weatherMode === 'manual'
       ? `Manual weather rules. Forecast highlights use your thresholds: ${prefs.hotTemperature}°C and ${prefs.rainProbability}% rain.`
       : `Automatic: hot-weather items ${choice(decision.hot, trip.rules.hotPlace)}; rain / jacket items ${choice(decision.rain, trip.rules.rainPlace)}. Thresholds: ${prefs.hotTemperature}°C and ${prefs.rainProbability}% rain. Partial forecasts can turn rules on; turning them off needs full coverage.`;
-    byId('weatherDays').innerHTML = weather?.days.length ? `<ul class="weatherList">${weather.days.map(day => {
+    byId('weatherDays').innerHTML = weather?.days.length ? `<div class="weatherTableWrap" role="region" aria-label="Trip weather" tabindex="0"><table class="weatherTable" aria-label="Daily forecast and packing notes"><thead><tr><th scope="col">Date</th><th scope="col">Weather</th><th scope="col">Temperature</th><th scope="col">Rain</th><th scope="col">Notes</th></tr></thead><tbody>${weather.days.map(day => {
       const [kind, label] = weatherCondition(day.code);
-      const hot = day.high >= prefs.hotTemperature;
-      const rain = day.rain !== null && day.rain >= prefs.rainProbability;
-      return `<li class="${hot ? 'hotDay' : ''} ${rain ? 'rainDay' : ''}"><strong>${escapeHtml(day.date)}</strong><span class="weatherCondition">${weatherIcon(kind)}<span>${label}</span></span><span>${Math.round(day.low)}–${Math.round(day.high)} °C${hot ? '<small class="weatherBadge hotBadge">Hot</small>' : ''}</span><span>${day.rain === null ? 'Rain: unavailable' : `${Math.round(day.rain)}% rain`}${rain ? '<small class="weatherBadge rainBadge">Bring a jacket</small>' : ''}</span></li>`;
-    }).join('')}</ul>` : '';
+      const dayNotes = weatherNotes(day);
+      const hot = dayNotes.some(note => note.kind === 'hot');
+      const rain = dayNotes.some(note => note.kind === 'rain');
+      const notes = renderWeatherNotes(dayNotes);
+      return `<tr class="${hot ? 'hotDay' : ''} ${rain ? 'rainDay' : ''}"><th scope="row">${escapeHtml(day.date)}</th><td><span class="weatherCondition">${weatherIcon(kind)}<span>${label}</span></span></td><td>${Math.round(day.low)}–${Math.round(day.high)} °C</td><td>${day.rain === null ? 'Unavailable' : `${Math.round(day.rain)}%`}</td><td class="weatherNotes">${notes || '—'}</td></tr>`;
+    }).join('')}</tbody></table></div>` : '';
   }
 
   function wireDestinationTools() {

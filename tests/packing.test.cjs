@@ -7,7 +7,10 @@ const vm = require('node:vm');
 function app() {
   const elements = new Map();
   function element() {
-    return { value: '', dataset: {}, textContent: '', innerHTML: '', hidden: false,
+    return { value: '', dataset: {}, textContent: '', hidden: false, children: [], _innerHTML: '',
+      get innerHTML() { return this._innerHTML; },
+      set innerHTML(value) { this._innerHTML = value; this.children = []; },
+      appendChild(child) { this.children.push(child); },
       classList: { add() {}, remove() {}, toggle() {} },
       add() {}, setAttribute() {}, closest() { return this; }, addEventListener(type, handler) { this.listeners[type] = handler; },
       listeners: {}, focus() {}, style: {}, contains() { return false; },
@@ -34,7 +37,7 @@ function app() {
       weatherDecision, applyWeatherRules, savePreferences, renderDestinationTools, renderPage, wireSettings, weatherKey, validDestination, findDestination, checkWeather,
       selectDestination, scheduleDestinationSearch, dismissDestinationSearch,
       getSearch: () => destinationSearch, getWeather: () => weatherResult,
-      renderTripForm, makeItemRow, updateItem, addItem, duplicateCurrentTrip, save, filters, els,
+      renderTripForm, renderCalendar, makeItemRow, updateItem, addItem, duplicateCurrentTrip, save, filters, els,
       getState: () => state, setState: value => { state = value; },
       disableRender: () => { render = () => {}; } };
   })();`, context);
@@ -390,4 +393,22 @@ test('settings route shows preferences and form submission saves the entered val
   assert.equal(byId('plannerPage').hidden, false);
   assert.equal(byId('rulesCard').hidden, false);
   assert.equal(byId('settingsPage').hidden, true);
+});
+
+test('calendar forecast notes match table thresholds and disappear for stale trip dates', () => {
+  const { a, trip } = forecastApp();
+  trip.weatherMode = 'manual';
+  setForecast(a, trip, [{ date: '2026-06-17', low: 15, high: 25, rain: 50, code: 2 }]);
+  a.renderCalendar(trip);
+  const day = () => a.els.calendar.children.find(child => child.dataset.date === '2026-06-17');
+  assert.match(day().innerHTML, /Hot/); assert.match(day().innerHTML, /Bring a jacket/);
+  assert.match(day().ariaLabel, /Partly cloudy.*Hot.*Bring a jacket/);
+  const unforecastDay = a.els.calendar.children.find(child => child.dataset.date === '2026-06-18');
+  assert.doesNotMatch(unforecastDay.innerHTML, /dayWeather|weatherBadge/);
+  a.savePreferences({ hotTemperature: 26, rainProbability: 51 });
+  a.renderCalendar(trip);
+  assert.doesNotMatch(day().innerHTML, /weatherBadge/);
+  assert.match(day().innerHTML, /weatherIcon/);
+  trip.returnDate = '2026-06-19'; a.renderCalendar(trip);
+  assert.doesNotMatch(day().innerHTML, /dayWeather|weatherIcon/);
 });

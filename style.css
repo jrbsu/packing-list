@@ -963,13 +963,8 @@ tr.packed {
 .destinationTools { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-top: .85rem; }
 .destinationTools > button { margin-top: .75rem; }
 .destinationTools p { line-height: 1.45; }
-.weatherList { list-style: none; padding: 0; margin: .5rem 0; font-size: .8rem; }
-.weatherList li { display: grid; grid-template-columns: 1fr 1.5fr auto auto; align-items: center; gap: .65rem; padding: .55rem 0; border-top: 1px solid var(--line); }
 .weatherCondition { display: flex; align-items: center; gap: .5rem; }
 .weatherIcon { width: 2rem; height: 2rem; flex: 0 0 2rem; }
-@media (max-width: 600px) {
-  .weatherList li { grid-template-columns: 1fr 1fr; }
-}
 button:disabled { cursor: default; opacity: .6; transform: none; }
 
 .locationSearch { grid-column: 1 / -1; min-width: 0; }
@@ -1146,5 +1141,25 @@ th { position: static; }
 .weatherBadge { display: block; width: fit-content; border-radius: 6px; padding: .15rem .35rem; margin-top: .2rem; font-weight: 700; font-size: .7rem; }
 .hotBadge { color: #92400e; background: #fef3c7; }
 .rainBadge { color: #075985; background: #e0f2fe; }
-.weatherList li.hotDay { border-left: 3px solid #f59e0b; padding-left: .5rem; }
-.weatherList li.rainDay { background: #f0f9ff; }
+.weatherTableWrap { max-width: 100%; overflow-x: auto; margin: .5rem 0; }
+.weatherTableWrap:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.weatherTable, .noCheckedBag .weatherTable { display: table; width: 100%; min-width: 32rem; font-size: .8rem; }
+.weatherTable thead { display: table-header-group; position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+.weatherTable tbody { display: table-row-group; padding: 0; }
+.weatherTable tr { display: table-row; padding: 0; margin: 0; border: 0; }
+.weatherTable th, .weatherTable td { display: table-cell; padding: .55rem .5rem; border: 0; border-top: 1px solid var(--line); vertical-align: middle; }
+.weatherTable th { position: static; }
+.weatherTable tbody th { color: var(--text); background: transparent; font-size: inherit; text-transform: none; letter-spacing: normal; white-space: nowrap; }
+.weatherTable .weatherNotes { min-width: 7.5rem; }
+.weatherTable .weatherBadge { margin: .15rem 0; }
+.weatherTable tr.hotDay > :first-child { box-shadow: inset 3px 0 #f59e0b; }
+.weatherTable tr.rainDay { background: #f0f9ff; }
+
+/* Keep forecast notes inside their calendar date, including on narrow screens. */
+.calendar .day { flex-wrap: wrap; align-content: flex-start; min-width: 0; white-space: normal; }
+.dayWeather { display: flex; flex-direction: column; align-items: flex-start; gap: .2rem; flex-basis: 100%; min-width: 0; }
+.dayWeather .weatherIcon { width: 1.25rem; height: 1.25rem; flex: 0 0 1.25rem; }
+.dayWeather .weatherBadge { max-width: 100%; margin: 0; padding: .15rem .2rem; font-size: .6rem; line-height: 1.2; text-align: left; overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .calendar .day { padding: .3rem .2rem; }
+}
