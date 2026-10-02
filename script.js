@@ -31,9 +31,10 @@
 
   const RULES = {
     manual: 'Manual',
-    basic: 'Basic clothes',
+    basic: 'Per day',
     formal: 'Formal',
     hot: 'Hot weather',
+    rain: 'Rain / jacket',
     international: 'International',
   };
 
@@ -43,6 +44,7 @@
     laundryDays: 0,
     formalDays: 0,
     hotPlace: false,
+    rainPlace: true,
     international: true,
   };
 
@@ -130,7 +132,7 @@
       ['clothes', 'Hat (baseball)', 0, 0, 'hot', ''],
       ['clothes', 'Hat (bobble)', 0, 0, 'manual', ''],
       ['clothes', 'Swimshorts', 0, 0, 'hot', ''],
-      ['clothes', 'Jacket', 1, 0, 'manual', ''],
+      ['clothes', 'Jacket', 1, 0, 'rain', 'Included when rain reaches your threshold.'],
 
       ['electronics', 'Personal laptop', 0, 1, 'manual', ''],
       ['electronics', 'Work laptop', 0, 0, 'manual', ''],
@@ -180,6 +182,7 @@
       homeCountry: '',
       destination: null,
       internationalMode: 'auto',
+      weatherMode: 'auto',
       leaveDate: '2026-06-17',
       returnDate: '2026-06-20',
       calendarMonth: '2026-06',
@@ -227,6 +230,13 @@
       ? rawTrip.usesCheckedBag
       : rawTrip.flying !== false;
     delete trip.flying;
+    trip.weatherMode = rawTrip.weatherMode === 'manual' ? 'manual' : 'auto';
+    // Upgrade the original default jacket; preserve edited quantities and other manual items.
+    if (!rawTrip.weatherMode) {
+      for (const item of trip.items) {
+        if (item.name === 'Jacket' && item.rule === 'manual' && item.checked === 1 && item.carryon === 0) item.rule = 'rain';
+      }
+    }
     trip.internationalMode = rawTrip.internationalMode === 'auto' ? 'auto' : 'manual';
     trip.homeCountry = typeof rawTrip.homeCountry === 'string' ? rawTrip.homeCountry : '';
     trip.destination = validDestination(rawTrip.destination) ? rawTrip.destination : null;
@@ -237,6 +247,26 @@
     trip.calendarMonth ||= getMonthKey(trip.leaveDate || new Date());
 
     return trip;
+  }
+
+  function normalisePreferences(raw = {}) {
+    raw = raw && typeof raw === 'object' ? raw : {};
+    const number = (value, fallback, min, max) =>
+      typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max ? value : fallback;
+    return {
+      homeLocation: typeof raw.homeLocation === 'string' ? raw.homeLocation : '',
+      homeCountry: typeof raw.homeCountry === 'string' && /^[A-Z]{2}$/.test(raw.homeCountry) ? raw.homeCountry : '',
+      hotTemperature: number(raw.hotTemperature, 25, -50, 60),
+      rainProbability: number(raw.rainProbability, 50, 0, 100),
+    };
+  }
+
+  function preferences() {
+    return normalisePreferences(state.preferences);
+  }
+
+  function homeCountryFor(trip) {
+    return trip.homeCountry || preferences().homeCountry;
   }
 
   function normaliseState(rawState) {
@@ -255,6 +285,7 @@
     return {
       currentTripId,
       trips,
+      preferences: normalisePreferences(rawState.preferences),
       ui: {
         rulesOpen: false,
       },
@@ -281,6 +312,7 @@
     return {
       currentTripId: trip.id,
       trips: [trip],
+      preferences: normalisePreferences(),
       ui: {
         rulesOpen: false,
       },
@@ -399,6 +431,11 @@
 
       if (item.rule === 'hot') {
         item.checked = trip.rules.hotPlace ? 1 : 0;
+        item.carryon = 0;
+      }
+
+      if (item.rule === 'rain') {
+        item.checked = trip.rules.rainPlace ? 1 : 0;
         item.carryon = 0;
       }
 
@@ -552,6 +589,7 @@
     }
 
     els.hotPlace.checked = Boolean(trip.rules.hotPlace);
+    byId('rainPlace').checked = Boolean(trip.rules.rainPlace);
     els.international.checked = Boolean(trip.rules.international);
   }
 
@@ -905,6 +943,7 @@
     const currentTrip = getCurrentTrip();
 
     currentTrip.rules[ruleName] = value;
+    if (ruleName === 'hotPlace' || ruleName === 'rainPlace') currentTrip.weatherMode = 'manual';
     if (ruleName === 'international') currentTrip.internationalMode = 'manual';
     recalculateTrip(currentTrip);
 
@@ -1136,8 +1175,13 @@
     }
 
     state = normaliseState(rawState);
+    weatherRequest += 1;
+    weatherResult = { key: '', message: '', days: [], loading: false };
+    dismissDestinationSearch();
+    renderSettings();
 
     for (const trip of state.trips) {
+      applyInternationalDetection(trip);
       recalculateTrip(trip);
     }
 
@@ -1173,6 +1217,7 @@
     els.jsonText.value = JSON.stringify(state, null, 2);
     els.jsonModal.classList.add('open');
     document.querySelector('main').inert = true;
+    byId('settingsPage').inert = true;
     document.querySelector('header').inert = true;
     els.jsonText.focus();
     els.jsonText.select();
@@ -1182,6 +1227,7 @@
     if (!els.jsonModal.classList.contains('open')) return;
     els.jsonModal.classList.remove('open');
     document.querySelector('main').inert = false;
+    byId('settingsPage').inert = false;
     document.querySelector('header').inert = false;
     modalOpener?.focus();
   }
@@ -1225,8 +1271,8 @@
   }
 
   function applyInternationalDetection(trip) {
-    if (trip.internationalMode !== 'auto' || !trip.homeCountry || !validDestination(trip.destination)) return false;
-    trip.rules.international = trip.homeCountry !== trip.destination.country_code;
+    if (trip.internationalMode !== 'auto' || !homeCountryFor(trip) || !validDestination(trip.destination)) return false;
+    trip.rules.international = homeCountryFor(trip) !== trip.destination.country_code;
     recalculateTrip(trip);
     return true;
   }
@@ -1277,6 +1323,109 @@
     }
   }
 
+  function weatherDecision(trip, days) {
+    const prefs = preferences();
+    const complete = days.length === getPackingDays(trip) + 1;
+    const hot = days.some(day => day.high >= prefs.hotTemperature);
+    const rain = days.some(day => day.rain !== null && day.rain >= prefs.rainProbability);
+    return {
+      hot: hot ? true : complete ? false : null,
+      rain: rain ? true : complete && days.every(day => day.rain !== null) ? false : null,
+    };
+  }
+
+  function applyWeatherRules(trip) {
+    if (trip.weatherMode === 'manual' || weatherResult.key !== weatherKey(trip) || !weatherResult.days.length) return;
+    const decision = weatherDecision(trip, weatherResult.days);
+    if (decision.hot !== null) trip.rules.hotPlace = decision.hot;
+    if (decision.rain !== null) trip.rules.rainPlace = decision.rain;
+    recalculateTrip(trip);
+  }
+
+  function savePreferences(next) {
+    state.preferences = normalisePreferences(next);
+    for (const trip of state.trips) applyInternationalDetection(trip);
+    applyWeatherRules(getCurrentTrip());
+    save();
+    render();
+  }
+
+  function renderSettings() {
+    const prefs = preferences();
+    byId('settingsHomeLocation').value = prefs.homeLocation;
+    byId('settingsHomeCountry').value = prefs.homeCountry;
+    byId('hotTemperature').value = prefs.hotTemperature;
+    byId('rainProbability').value = prefs.rainProbability;
+  }
+
+  function renderPage() {
+    const settingsOpen = window.location.hash === '#settings';
+    byId('plannerPage').hidden = settingsOpen;
+    byId('settingsPage').hidden = !settingsOpen;
+    byId('rulesCard').hidden = settingsOpen;
+    if (settingsOpen) renderSettings();
+    byId(settingsOpen ? 'settingsTitle' : 'tripName').focus();
+  }
+
+  function wireSettings() {
+    window.addEventListener('hashchange', renderPage);
+    byId('settingsForm').addEventListener('submit', event => {
+      event.preventDefault();
+      savePreferences({
+        homeLocation: byId('settingsHomeLocation').value.trim(),
+        homeCountry: byId('settingsHomeCountry').value,
+        hotTemperature: Number(byId('hotTemperature').value),
+        rainProbability: Number(byId('rainProbability').value),
+      });
+      byId('settingsStatus').textContent = 'Settings applied. ' + els.saveStatus.textContent;
+    });
+    byId('weatherMode').addEventListener('change', event => {
+      const trip = getCurrentTrip();
+      trip.weatherMode = event.target.value;
+      applyWeatherRules(trip);
+      save();
+      render();
+      if (trip.weatherMode === 'auto' && weatherResult.key !== weatherKey(trip) && trip.destination) checkWeather();
+    });
+    byId('rainPlace').addEventListener('change', event => updateTripRule('rainPlace', event.target.checked));
+    renderPage();
+  }
+
+  // Open-Meteo daily WMO codes describe the day's most severe condition.
+  function weatherCondition(code) {
+    if (code === 0) return ['sun', 'Clear sky'];
+    if (code === 1) return ['sun', 'Mainly clear'];
+    if (code === 2) return ['partly', 'Partly cloudy'];
+    if (code === 3) return ['cloud', 'Overcast'];
+    if ([45, 48].includes(code)) return ['fog', 'Fog'];
+    if ([51, 53, 55].includes(code)) return ['rain', 'Drizzle'];
+    if ([56, 57].includes(code)) return ['rain', 'Freezing drizzle'];
+    if ([61, 63, 65].includes(code)) return ['rain', 'Rain'];
+    if ([66, 67].includes(code)) return ['rain', 'Freezing rain'];
+    if ([71, 73, 75, 77].includes(code)) return ['snow', 'Snow'];
+    if ([80, 81, 82].includes(code)) return ['rain', 'Rain showers'];
+    if ([85, 86].includes(code)) return ['snow', 'Snow showers'];
+    if ([95, 97].includes(code)) return ['storm', 'Thunderstorm'];
+    if ([96, 99].includes(code)) return ['storm', 'Thunderstorm with hail'];
+    return ['unknown', 'Conditions unavailable'];
+  }
+
+  function weatherIcon(kind) {
+    const sun = '<circle cx="16" cy="16" r="6" fill="#fbbf24" stroke="#d97706"/><path d="M16 3v3m0 20v3M3 16h3m20 0h3M7 7l2 2m14 14 2 2M7 25l2-2M23 9l2-2" stroke="#d97706"/>';
+    const cloud = '<path d="M9 22a6 6 0 1 1 1-12 8 8 0 0 1 15 3 4.5 4.5 0 0 1-1 9Z" fill="#dbeafe" stroke="#64748b"/>';
+    const marks = {
+      rain: '<path d="m11 25-1 3m7-3-1 3m7-3-1 3" stroke="#0284c7"/>',
+      snow: '<path d="M11 25v5m-2.2-3.8 4.4 2.6m-4.4 0 4.4-2.6M22 25v5m-2.2-3.8 4.4 2.6m-4.4 0 4.4-2.6" stroke="#0284c7"/>',
+      storm: '<path d="m17 19-5 7h5l-2 5 8-9h-6l3-3" fill="#fbbf24" stroke="#d97706"/>',
+      fog: '<path d="M5 25h22M8 29h16" stroke="#94a3b8"/>',
+    };
+    const drawing = kind === 'sun' ? sun
+      : kind === 'partly' ? `<g transform="translate(0 -2) scale(.75)">${sun}</g>${cloud}`
+      : kind === 'unknown' ? '<circle cx="16" cy="16" r="12" stroke="currentColor"/><path d="M12 12a4 4 0 1 1 6 3.5c-2 1-2 2-2 3M16 23h.01" stroke="currentColor"/>'
+      : cloud + (marks[kind] || '');
+    return `<svg class="weatherIcon" viewBox="0 0 32 32" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${drawing}</svg>`;
+  }
+
   function forecastDays(data, leaveDate, returnDate) {
     const daily = data.daily;
     if (!Array.isArray(daily?.time)) throw new Error('Missing forecast');
@@ -1285,7 +1434,7 @@
       const high = daily.temperature_2m_max?.[index];
       const rain = daily.precipitation_probability_max?.[index];
       if (date < leaveDate || date > returnDate || !Number.isFinite(low) || !Number.isFinite(high)) return [];
-      return [{ date, low, high, rain: Number.isFinite(rain) ? rain : null }];
+      return [{ date, low, high, rain: Number.isFinite(rain) ? rain : null, code: daily.weather_code?.[index] ?? null }];
     });
   }
 
@@ -1304,9 +1453,12 @@
     renderDestinationTools(trip);
     try {
       const place = trip.destination;
-      const data = await fetchLookup(`https://api.open-meteo.com/v1/forecast?latitude=${place.latitude}&longitude=${place.longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&temperature_unit=celsius&timezone=auto&forecast_days=16`);
+      const data = await fetchLookup(`https://api.open-meteo.com/v1/forecast?latitude=${place.latitude}&longitude=${place.longitude}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&temperature_unit=celsius&timezone=auto&forecast_days=16`);
       if (request !== weatherRequest || key !== weatherKey(getCurrentTrip())) return;
       weatherResult.days = forecastDays(data, trip.leaveDate, trip.returnDate);
+      applyWeatherRules(trip);
+      save();
+      render();
       const expected = getPackingDays(trip) + 1;
       weatherResult.message = weatherResult.days.length
         ? `${weatherResult.days.length} of ${expected} trip days available. Temperatures in °C; rain is the chance of precipitation. Checked ${new Date().toLocaleString()}.`
@@ -1323,6 +1475,10 @@
   function renderDestinationTools(trip) {
     byId('homeCountry').value = trip.homeCountry;
     byId('internationalMode').value = trip.internationalMode;
+    byId('weatherMode').value = trip.weatherMode || 'auto';
+    byId('homeSettingsHint').textContent = preferences().homeCountry
+      ? `Home settings: ${[preferences().homeLocation, preferences().homeCountry].filter(Boolean).join(', ')}. You can override the country for this trip.`
+      : 'Set your home location and country in Settings, or choose a country for this trip.';
     const search = destinationSearch.key === destinationKey(trip) ? destinationSearch : null;
     byId('destinationStatus').textContent = search?.message || (trip.destination
       ? `Confirmed destination: ${destinationLabel(trip.destination)}`
@@ -1337,21 +1493,32 @@
     }
     byId('internationalStatus').textContent = trip.internationalMode === 'manual'
       ? `Manual setting: international items ${trip.rules.international ? 'on' : 'off'}. Change this in Packing rules, or choose automatic detection above.`
-      : !trip.homeCountry || !trip.destination
+      : !homeCountryFor(trip) || !trip.destination
         ? 'Choose your home country and confirm a destination. Your existing international setting stays unchanged until both are known.'
         : `${trip.rules.international ? 'International' : 'Domestic'} relative to your home country — international items ${trip.rules.international ? 'on' : 'off'}. This compares country/territory codes; you can override it in Packing rules.`;
     const weather = weatherResult.key === weatherKey(trip) ? weatherResult : null;
     byId('weatherBtn').disabled = !trip.destination || Boolean(weather?.loading);
     byId('weatherStatus').textContent = weather?.message || 'Confirm a destination and check weather for your trip dates. Forecasts are available up to 16 days ahead.';
-    byId('weatherDays').innerHTML = weather?.days.length ? `<ul class="weatherList">${weather.days.map(day =>
-      `<li><strong>${escapeHtml(day.date)}</strong><span>${Math.round(day.low)}–${Math.round(day.high)} °C</span><span>${day.rain === null ? 'Rain: unavailable' : `${Math.round(day.rain)}% rain`}</span></li>`).join('')}</ul>` : '';
+    const prefs = preferences();
+    const decision = weather?.days.length ? weatherDecision(trip, weather.days) : { hot: null, rain: null };
+    const choice = (value, active) => value === null ? `awaiting more forecast data (currently ${active ? 'on' : 'off'})` : value ? 'on' : 'off';
+    byId('weatherRulesStatus').textContent = trip.weatherMode === 'manual'
+      ? `Manual weather rules. Forecast highlights use your thresholds: ${prefs.hotTemperature}°C and ${prefs.rainProbability}% rain.`
+      : `Automatic: hot-weather items ${choice(decision.hot, trip.rules.hotPlace)}; rain / jacket items ${choice(decision.rain, trip.rules.rainPlace)}. Thresholds: ${prefs.hotTemperature}°C and ${prefs.rainProbability}% rain. Partial forecasts can turn rules on; turning them off needs full coverage.`;
+    byId('weatherDays').innerHTML = weather?.days.length ? `<ul class="weatherList">${weather.days.map(day => {
+      const [kind, label] = weatherCondition(day.code);
+      const hot = day.high >= prefs.hotTemperature;
+      const rain = day.rain !== null && day.rain >= prefs.rainProbability;
+      return `<li class="${hot ? 'hotDay' : ''} ${rain ? 'rainDay' : ''}"><strong>${escapeHtml(day.date)}</strong><span class="weatherCondition">${weatherIcon(kind)}<span>${label}</span></span><span>${Math.round(day.low)}–${Math.round(day.high)} °C${hot ? '<small class="weatherBadge hotBadge">Hot</small>' : ''}</span><span>${day.rain === null ? 'Rain: unavailable' : `${Math.round(day.rain)}% rain`}${rain ? '<small class="weatherBadge rainBadge">Bring a jacket</small>' : ''}</span></li>`;
+    }).join('')}</ul>` : '';
   }
 
   function wireDestinationTools() {
     const codes = 'AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW'.split(' ');
     const names = typeof Intl.DisplayNames === 'function' ? new Intl.DisplayNames(['en'], { type: 'region' }) : null;
     const countries = codes.map(code => [code, names?.of(code) || code]).sort((a, b) => a[1].localeCompare(b[1]));
-    fillSelect(byId('homeCountry'), [['', 'Choose home country…'], ...countries], '');
+    fillSelect(byId('homeCountry'), [['', 'Use home settings'], ...countries], '');
+    fillSelect(byId('settingsHomeCountry'), [['', 'Choose home country…'], ...countries], '');
     els.location.addEventListener('keydown', event => {
       if (event.isComposing) return;
       if (event.key === 'Enter') {
@@ -1710,6 +1877,7 @@
       }
     });
     wireDestinationTools();
+    wireSettings();
     wireTripControls();
     wireRuleControls();
     wireCalendarControls();
@@ -1723,6 +1891,7 @@
   // ---------------------------------------------------------------------------
 
   for (const trip of state.trips) {
+    applyInternationalDetection(trip);
     recalculateTrip(trip);
   }
 

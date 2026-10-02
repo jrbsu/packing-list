@@ -9,8 +9,8 @@ function app() {
   function element() {
     return { value: '', dataset: {}, textContent: '', innerHTML: '', hidden: false,
       classList: { add() {}, remove() {}, toggle() {} },
-      add() {}, setAttribute() {}, closest() { return this; }, addEventListener() {},
-      focus() {}, style: {}, contains() { return false; },
+      add() {}, setAttribute() {}, closest() { return this; }, addEventListener(type, handler) { this.listeners[type] = handler; },
+      listeners: {}, focus() {}, style: {}, contains() { return false; },
     };
   }
   const document = {
@@ -21,6 +21,7 @@ function app() {
   };
   const storage = new Map();
   const context = vm.createContext({ document, console, setTimeout, clearTimeout, AbortController,
+    window: { location: { hash: '' }, addEventListener() {} },
     Option: function Option(label, value) { this.label = label; this.value = value; },
     localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) },
   });
@@ -29,7 +30,8 @@ function app() {
   vm.runInContext(source.slice(0, startup) + `
     globalThis.api = { makeDefaultTrip, normaliseTrip, normaliseState, recalculateTrip,
       getItemTotal, getTripStats, getVisibleItems, getPackingDays, getClothingSetsNeeded,
-      applyInternationalDetection, forecastDays, validDestination, findDestination, checkWeather,
+      applyInternationalDetection, forecastDays, weatherCondition, normalisePreferences, preferences,
+      weatherDecision, applyWeatherRules, savePreferences, renderDestinationTools, renderPage, wireSettings, weatherKey, validDestination, findDestination, checkWeather,
       selectDestination, scheduleDestinationSearch, dismissDestinationSearch,
       getSearch: () => destinationSearch, getWeather: () => weatherResult,
       renderTripForm, makeItemRow, updateItem, addItem, duplicateCurrentTrip, save, filters, els,
@@ -198,7 +200,7 @@ test('failed destination lookup is recoverable and preserves packing rules', asy
 });
 
 test('weather requests need a confirmed destination and show partial coverage', async () => {
-  const a = app(); const trip = a.getState().trips[0];
+  const a = app(); a.disableRender(); const trip = a.getState().trips[0];
   let calls = 0;
   a.context.fetch = async () => { calls++; return { ok: true, json: async () => ({ daily: {
     time: ['2026-06-17'], temperature_2m_min: [15], temperature_2m_max: [27], precipitation_probability_max: [10],
@@ -257,4 +259,135 @@ test('dismissing suggestions ignores a pending search response', async () => {
   const pending = a.findDestination(); a.dismissDestinationSearch();
   respond({ ok: true, json: async () => ({ results: [paris] }) });
   await pending; assert.equal(a.getSearch().results.length, 0);
+});
+
+test('forecast conditions distinguish sun, clouds, precipitation and unknown codes', () => {
+  const a = app();
+  for (const [code, kind] of [[0, 'sun'], [1, 'sun'], [2, 'partly'], [3, 'cloud'],
+    [45, 'fog'], [48, 'fog'], [51, 'rain'], [57, 'rain'], [65, 'rain'], [67, 'rain'],
+    [71, 'snow'], [77, 'snow'], [82, 'rain'], [86, 'snow'], [95, 'storm'],
+    [97, 'storm'], [99, 'storm'], [null, 'unknown'], [undefined, 'unknown'], [100, 'unknown']]) {
+    assert.equal(a.weatherCondition(code)[0], kind, `WMO code ${code}`);
+  }
+  const days = a.forecastDays({ daily: { time: ['2026-06-17'],
+    temperature_2m_min: [15], temperature_2m_max: [27], weather_code: [0],
+  } }, '2026-06-17', '2026-06-17');
+  assert.equal(days[0].code, 0);
+});
+
+function forecastApp() {
+  const a = app(); a.disableRender();
+  const trip = a.getState().trips[0];
+  trip.destination = paris;
+  trip.leaveDate = '2026-06-17'; trip.returnDate = '2026-06-18';
+  return { a, trip };
+}
+
+function setForecast(a, trip, days) {
+  Object.assign(a.getWeather(), { key: a.weatherKey(trip), days });
+  a.applyWeatherRules(trip);
+}
+
+test('thresholds are inclusive, affect quantities, and clear packed checks only when counts change', () => {
+  const { a, trip } = forecastApp();
+  const hotItem = trip.items.find(item => item.rule === 'hot');
+  const jacket = trip.items.find(item => item.rule === 'rain');
+  setForecast(a, trip, [{ high: 25, rain: 50 }]);
+  assert.equal(a.getItemTotal(hotItem), 1); assert.equal(a.getItemTotal(jacket), 1);
+  hotItem.packed = true; jacket.packed = true;
+  setForecast(a, trip, [{ high: 25, rain: 50 }]);
+  assert.equal(hotItem.packed, true); assert.equal(jacket.packed, true);
+  setForecast(a, trip, [{ high: 24, rain: 49 }, { high: 24, rain: 49 }]);
+  assert.equal(a.getItemTotal(hotItem), 0); assert.equal(a.getItemTotal(jacket), 0);
+  assert.equal(hotItem.packed, false); assert.equal(jacket.packed, false);
+});
+
+test('partial or missing forecasts never turn off existing weather choices', () => {
+  const { a, trip } = forecastApp();
+  trip.rules.hotPlace = true; trip.rules.rainPlace = true;
+  setForecast(a, trip, [{ high: 20, rain: 10 }]);
+  assert.equal(trip.rules.hotPlace, true); assert.equal(trip.rules.rainPlace, true);
+  setForecast(a, trip, []);
+  assert.equal(trip.rules.hotPlace, true); assert.equal(trip.rules.rainPlace, true);
+  setForecast(a, trip, [{ high: 20, rain: null }, { high: 20, rain: 10 }]);
+  assert.equal(trip.rules.hotPlace, false); assert.equal(trip.rules.rainPlace, true);
+});
+
+test('manual weather mode and manual items retain quantities; stale forecasts are ignored', () => {
+  const { a, trip } = forecastApp();
+  trip.weatherMode = 'manual'; trip.rules.hotPlace = false; trip.rules.rainPlace = false;
+  setForecast(a, trip, [{ high: 30, rain: 90 }]);
+  assert.equal(trip.rules.hotPlace, false); assert.equal(trip.rules.rainPlace, false);
+  trip.weatherMode = 'auto'; trip.returnDate = '2026-06-19';
+  a.applyWeatherRules(trip);
+  assert.equal(trip.rules.hotPlace, false);
+  const jacket = trip.items.find(item => item.rule === 'rain');
+  jacket.rule = 'manual'; jacket.checked = 3;
+  setForecast(a, trip, [{ high: 30, rain: 90 }]);
+  assert.equal(trip.rules.hotPlace, true); assert.equal(jacket.checked, 3);
+});
+
+test('settings persist, validate ranges, and recalculate a matching forecast', () => {
+  const { a, trip } = forecastApp();
+  setForecast(a, trip, [{ high: 25, rain: 50 }, { high: 25, rain: 50 }]);
+  a.savePreferences({ homeLocation: 'London', homeCountry: 'GB', hotTemperature: 26, rainProbability: 51 });
+  assert.equal(trip.rules.hotPlace, false); assert.equal(trip.rules.rainPlace, false);
+  const restored = a.normaliseState(JSON.parse(a.storage.get('packingPlanner.v2')));
+  assert.equal(restored.preferences.homeLocation, 'London');
+  assert.equal(restored.preferences.hotTemperature, 26);
+  assert.equal(restored.preferences.rainProbability, 51);
+  assert.equal(a.normalisePreferences({ hotTemperature: null, rainProbability: 101 }).hotTemperature, 25);
+  assert.equal(a.normalisePreferences({ rainProbability: -1 }).rainProbability, 50);
+  assert.equal(a.normalisePreferences({ hotTemperature: 0, rainProbability: 0 }).rainProbability, 0);
+});
+
+test('home settings apply to international detection with per-trip overrides', () => {
+  const { a, trip } = forecastApp();
+  a.savePreferences({ homeLocation: 'Paris', homeCountry: 'FR' });
+  assert.equal(trip.rules.international, false);
+  trip.homeCountry = 'US'; a.applyInternationalDetection(trip);
+  assert.equal(trip.rules.international, true);
+});
+
+test('default jacket migrates to rain rule while edited quantities survive', () => {
+  const a = app();
+  const original = { name: 'Jacket', rule: 'manual', checked: 1, carryon: 0 };
+  assert.equal(a.normaliseTrip({ items: [original] }).items[0].rule, 'rain');
+  assert.equal(a.normaliseTrip({ items: [{ ...original, checked: 2 }] }).items[0].rule, 'manual');
+  assert.equal(a.normaliseTrip({ weatherMode: 'manual', items: [original] }).items[0].rule, 'manual');
+});
+
+test('forecast markup uses personal thresholds and includes accessible condition labels', () => {
+  const { a, trip } = forecastApp();
+  setForecast(a, trip, [{ date: '2026-06-17', low: 15, high: 25, rain: 50, code: 2 }]);
+  a.renderDestinationTools(trip);
+  const html = a.context.document.getElementById('weatherDays').innerHTML;
+  assert.match(html, /Partly cloudy/); assert.match(html, /aria-hidden="true"/);
+  assert.match(html, /hotBadge/); assert.match(html, /Bring a jacket/);
+  a.savePreferences({ hotTemperature: 26, rainProbability: 51 });
+  a.renderDestinationTools(trip);
+  assert.doesNotMatch(a.context.document.getElementById('weatherDays').innerHTML, /hotBadge|Bring a jacket/);
+});
+
+test('settings route shows preferences and form submission saves the entered values', () => {
+  const { a } = forecastApp();
+  const byId = id => a.context.document.getElementById(id);
+  a.context.window.location.hash = '#settings';
+  a.wireSettings();
+  assert.equal(byId('plannerPage').hidden, true);
+  assert.equal(byId('rulesCard').hidden, true);
+  assert.equal(byId('settingsPage').hidden, false);
+  assert.equal(byId('hotTemperature').value, 25);
+  byId('settingsHomeLocation').value = ' London ';
+  byId('settingsHomeCountry').value = 'GB';
+  byId('hotTemperature').value = '22.5';
+  byId('rainProbability').value = '70';
+  byId('settingsForm').listeners.submit({ preventDefault() {} });
+  assert.equal(a.preferences().homeLocation, 'London');
+  assert.equal(a.preferences().hotTemperature, 22.5);
+  assert.equal(a.preferences().rainProbability, 70);
+  a.context.window.location.hash = '#planner'; a.renderPage();
+  assert.equal(byId('plannerPage').hidden, false);
+  assert.equal(byId('rulesCard').hidden, false);
+  assert.equal(byId('settingsPage').hidden, true);
 });

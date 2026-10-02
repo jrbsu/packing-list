@@ -25,6 +25,7 @@
         <span id="progressText">0%</span>
       </div>
       <div class="actions">
+        <a class="buttonLink" href="#settings">Settings</a>
         <select id="tripPicker" class="tripSelect" aria-label="Choose saved trip"></select>
         <button id="newTripBtn" class="primary">New trip</button>
         <details class="tripMenu">
@@ -42,7 +43,7 @@
     </div>
   </header>
 
-  <main class="page">
+  <main id="plannerPage" class="page">
     <section class="grid">
       <div class="leftStack">
         <details class="card tripDetails" open>
@@ -93,11 +94,19 @@
                     </select>
                   </div>
                 </div>
+                <p id="homeSettingsHint" class="tiny"></p>
                 <p id="internationalStatus" class="tiny"></p>
+                <label class="lbl" for="weatherMode">Weather packing rules</label>
+                <select id="weatherMode">
+                  <option value="auto">Automatic from forecast</option>
+                  <option value="manual">Set manually in packing rules</option>
+                </select>
+                <p id="weatherRulesStatus" class="tiny" role="status"></p>
+                <p class="tiny"><a href="#settings">Change your weather thresholds</a></p>
                 <button id="weatherBtn" class="slim" type="button">Check trip weather</button>
                 <p id="weatherStatus" class="tiny" role="status"></p>
                 <div id="weatherDays"></div>
-                <p class="tiny">Location and weather lookups use <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a> and <a href="https://www.geonames.org/" target="_blank" rel="noopener noreferrer">GeoNames</a>. Weather does not change your packing rules.</p>
+                <p class="tiny">Location and weather lookups use <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a> and <a href="https://www.geonames.org/" target="_blank" rel="noopener noreferrer">GeoNames</a>. Automatic weather rules use your personal thresholds.</p>
               </div>
               </div>
             </details>
@@ -193,6 +202,36 @@
     </section>
   </main>
 
+  <section id="settingsPage" class="page settingsPage" aria-labelledby="settingsTitle" hidden>
+    <a class="buttonLink" href="#planner">← Back to packing</a>
+    <div class="card">
+      <div class="cardHead"><div><h2 id="settingsTitle" tabindex="-1">Your settings</h2>
+        <p class="tiny">Your home base and weather preferences, saved in this browser for all trips.</p></div></div>
+      <form id="settingsForm" class="cardBody">
+        <h3>Home location</h3>
+        <div class="fields">
+          <div><label class="lbl" for="settingsHomeLocation">Home city / location</label>
+            <input id="settingsHomeLocation" type="text" placeholder="e.g. San Francisco, CA" autocomplete="address-level2"></div>
+          <div><label class="lbl" for="settingsHomeCountry">Home country / territory</label>
+            <select id="settingsHomeCountry" autocomplete="country"></select></div>
+        </div>
+        <p class="tiny">Choose the country for your home location. Trips using home settings compare this country with the destination to set international items.</p>
+        <h3>Weather preferences</h3>
+        <div class="fields">
+          <div><label class="lbl" for="hotTemperature">Hot at or above (°C)</label>
+            <input id="hotTemperature" type="number" min="-50" max="60" step="0.5" required aria-describedby="hotHelp">
+            <p id="hotHelp" class="tiny">A daily high at this temperature or above adds one of each Hot weather item.</p></div>
+          <div><label class="lbl" for="rainProbability">Bring a jacket at or above (% rain)</label>
+            <input id="rainProbability" type="number" min="0" max="100" step="1" required aria-describedby="rainHelp">
+            <p id="rainHelp" class="tiny">A daily rain chance at this percentage or above adds one of each Rain / jacket item.</p></div>
+        </div>
+        <p class="tiny">One matching day is enough, including departure and return. Forecast highlights use these thresholds even when a trip uses manual packing rules. Missing forecast days keep existing choices until more data is available.</p>
+        <button class="primary" type="submit">Save settings</button>
+        <p id="settingsStatus" class="tiny" role="status"></p>
+      </form>
+    </div>
+  </section>
+
         <section id="rulesCard" class="card configCard rulesDock collapsed">
           <div id="rulesHead" class="cardHead collapsibleHead" role="button" tabindex="0" aria-controls="rulesBody"
             aria-expanded="false">
@@ -215,7 +254,7 @@
               <div class="rule">
                 <div>
                   <div class="ruleTitle">Backup set</div>
-                  <div class="ruleHelp">Extra basic clothes, included in your packing quantities.</div>
+                  <div class="ruleHelp">Extra sets for items using the Per day rule.</div>
                 </div>
                 <input id="backup" aria-label="Backup sets" type="number" min="0" step="1">
               </div>
@@ -223,7 +262,7 @@
               <div class="rule">
                 <div>
                   <div class="ruleTitle">Laundry days</div>
-                  <div class="ruleHelp">Splits the trip into laundry cycles. Example: 7 days after departure + 1 laundry
+                  <div class="ruleHelp">Per day packs one per day after departure, adjusted for laundry. Example: 7 days after departure + 1 laundry
                     day = 4 sets.</div>
                 </div>
                 <input id="laundryDays" aria-label="Laundry days" type="number" min="0" step="1">
@@ -240,7 +279,7 @@
               <label class="rule toggleRule">
                 <div>
                   <div class="ruleTitle">Hot weather</div>
-                  <div class="ruleHelp">Adds warm-weather items like shorts, swimwear, sunscreen, and a cap.</div>
+                  <div class="ruleHelp">Adds warm-weather items. Changing this switches weather rules to manual.</div>
                 </div>
 
                 <input id="hotPlace" class="toggleInput" type="checkbox">
@@ -249,6 +288,13 @@
                   <span class="toggleState toggleOff">Off</span>
                   <span class="toggleState toggleOn">On</span>
                 </span>
+              </label>
+
+              <label class="rule toggleRule">
+                <div><div class="ruleTitle">Rain / jacket</div>
+                  <div class="ruleHelp">Adds rain-rule items like a jacket. Changing this switches weather rules to manual.</div></div>
+                <input id="rainPlace" class="toggleInput" type="checkbox">
+                <span class="ruleToggleButton" aria-hidden="true"><span class="toggleState toggleOff">Off</span><span class="toggleState toggleOn">On</span></span>
               </label>
 
               <label class="rule toggleRule">

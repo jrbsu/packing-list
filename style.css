@@ -964,7 +964,12 @@ tr.packed {
 .destinationTools > button { margin-top: .75rem; }
 .destinationTools p { line-height: 1.45; }
 .weatherList { list-style: none; padding: 0; margin: .5rem 0; font-size: .8rem; }
-.weatherList li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .4rem; padding: .4rem 0; border-top: 1px solid var(--line); }
+.weatherList li { display: grid; grid-template-columns: 1fr 1.5fr auto auto; align-items: center; gap: .65rem; padding: .55rem 0; border-top: 1px solid var(--line); }
+.weatherCondition { display: flex; align-items: center; gap: .5rem; }
+.weatherIcon { width: 2rem; height: 2rem; flex: 0 0 2rem; }
+@media (max-width: 600px) {
+  .weatherList li { grid-template-columns: 1fr 1fr; }
+}
 button:disabled { cursor: default; opacity: .6; transform: none; }
 
 .locationSearch { grid-column: 1 / -1; min-width: 0; }
@@ -1129,3 +1134,17 @@ th { position: static; }
 @media (max-width: 560px) {
   .rulesDock { right: .75rem; bottom: .75rem; width: calc(100vw - 1.5rem); }
 }
+
+/* Personal settings and forecast thresholds. */
+[hidden] { display: none !important; }
+.buttonLink { display: inline-block; padding: .62rem .82rem; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--text); font-weight: 700; text-decoration: none; }
+.buttonLink:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.settingsPage { max-width: 760px; }
+.settingsPage > .buttonLink { margin-bottom: 1rem; }
+.settingsPage h3 { margin: .5rem 0 1rem; }
+.settingsPage .fields + .tiny { margin-bottom: 1.5rem; }
+.weatherBadge { display: block; width: fit-content; border-radius: 6px; padding: .15rem .35rem; margin-top: .2rem; font-weight: 700; font-size: .7rem; }
+.hotBadge { color: #92400e; background: #fef3c7; }
+.rainBadge { color: #075985; background: #e0f2fe; }
+.weatherList li.hotDay { border-left: 3px solid #f59e0b; padding-left: .5rem; }
+.weatherList li.rainDay { background: #f0f9ff; }
