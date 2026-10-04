@@ -761,11 +761,6 @@ td.item {
     font-weight: 850
 }
 
-.note {
-    font-size: .82rem;
-    padding-block: .48rem
-}
-
 .total {
     font-weight: 950;
     font-size: 1.05rem
@@ -1176,4 +1171,18 @@ th { position: static; }
   .cat td.actionsCol { grid-column: 2; grid-row: 5; }
   .noCheckedBag .cat td.ruleCol { grid-row: 2; }
   .noCheckedBag .cat td.pack, .noCheckedBag .cat td.actionsCol { grid-row: 3; }
+}
+
+/* Compact packing rows with one line for the item name. */
+.cat th, .cat td { padding: .35rem .55rem; }
+.cat td.item { padding-left: .7rem; }
+.cat input, .cat select { padding-block: .4rem; }
+.cat .packToggle { min-height: 2.25rem; padding-block: .4rem; }
+.cat .actionsCol button { padding-block: .4rem; }
+.cat .catHead { padding-block: .55rem; }
+@media (max-width: 860px) {
+  .cat tbody tr { gap: .45rem .6rem; padding: .65rem; margin-top: .5rem; }
+  .cat td, .cat td.item { padding: 0; }
+  .cat input, .cat select, .cat .packToggle, .cat .actionsCol button { min-height: 2.5rem; }
+  .cat td.num::before, .cat td.ruleCol::before { margin-bottom: .2rem; }
 }

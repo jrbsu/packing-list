@@ -471,7 +471,6 @@
     return trip.items.filter((item) => {
       const searchableText = [
         item.name,
-        item.note,
         CATEGORIES[item.category],
         RULES[item.rule],
       ].join(' ').toLowerCase();
@@ -830,15 +829,6 @@
             type="text"
             value="${escapeHtml(item.name)}"
             aria-label="Item name"
-          >
-          <input
-            class="note"
-            data-id="${escapeHtml(item.id)}"
-            data-field="note"
-            type="text"
-            value="${escapeHtml(item.note)}"
-            placeholder="Note"
-            aria-label="Item note"
           >
         </div>
       </td>
