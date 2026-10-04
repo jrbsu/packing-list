@@ -766,6 +766,7 @@
 
     const section = document.createElement('section');
     section.className = `cat ${isCollapsed ? 'collapsed' : ''}`;
+    section.dataset.category = category;
 
     section.innerHTML = `
       <div class="catHead" data-toggle-cat="${category}" role="button" tabindex="0" aria-expanded="${!isCollapsed}">

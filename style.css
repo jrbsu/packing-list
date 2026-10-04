@@ -617,24 +617,27 @@ label.lbl {
     background: #64748b
 }
 
-.chip.clothes {
-    background: #06b6d4
+.cat { --category-color: #64748b; }
+.cat[data-category="clothes"] { --category-color: #06b6d4; }
+.cat[data-category="electronics"] { --category-color: #22c55e; }
+.cat[data-category="toiletries"] { --category-color: #f97316; }
+.cat[data-category="documents"] { --category-color: #8b5cf6; }
+.cat[data-category="medical"] { --category-color: #ef4444; }
+.cat .chip { background: var(--category-color); }
+.cat td.item { position: relative; }
+.cat td.item::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: .5rem;
+    bottom: .5rem;
+    width: 3px;
+    border-radius: 2px;
+    background: var(--category-color);
+    pointer-events: none;
 }
-
-.chip.electronics {
-    background: #22c55e
-}
-
-.chip.toiletries {
-    background: #f97316
-}
-
-.chip.documents {
-    background: #8b5cf6
-}
-
-.chip.medical {
-    background: #ef4444
+@media (max-width: 860px) {
+    .cat td.item { position: static; }
 }
 
 table {
