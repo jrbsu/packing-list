@@ -1018,7 +1018,6 @@ details[open] > .sectionSummary::after { transform: rotate(45deg); }
 .tripDetails[open] > summary,
 .calendarCard[open] > summary { border-bottom: 1px solid var(--line); }
 .secondarySettings { border-top: 1px solid var(--line); margin-top: 1rem; padding-top: .85rem; }
-.secondarySettings > summary { color: var(--accent); font-size: .88rem; font-weight: 700; }
 .secondaryBody { padding-top: 1rem; }
 .destinationTools { margin-top: 1rem; }
 .tripMenu { position: relative; }
@@ -1163,3 +1162,6 @@ th { position: static; }
 @media (max-width: 560px) {
   .calendar .day { padding: .3rem .2rem; }
 }
+
+.tripHomeSettings { margin-bottom: 1.5rem; }
+.internationalRuleSettings { border-top: 1px solid var(--line); padding-top: .85rem; }

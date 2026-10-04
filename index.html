@@ -69,33 +69,23 @@
                 <input id="returnDate" type="date">
               </div>
             </div>
-            <details class="secondarySettings" open>
-              <summary>Bags, international travel &amp; weather</summary>
+            <section class="secondarySettings" aria-label="Bags and weather">
               <div class="secondaryBody">
               <div class="travelMode">
-                <label class="lbl" for="usesCheckedBag">Using a checked bag?</label>
-                <select id="usesCheckedBag" aria-describedby="checkedBagHelp">
-                  <option value="true">Using a checked bag</option>
-                  <option value="false">Not using a checked bag</option>
-                </select>
+                <label class="rule toggleRule" for="usesCheckedBag">
+                  <span class="ruleTitle">Using a checked bag?</span>
+                  <input id="usesCheckedBag" class="toggleInput" type="checkbox" role="switch" aria-describedby="checkedBagHelp">
+                  <span class="ruleToggleButton" aria-hidden="true">
+                    <span class="toggleState toggleOff">No</span>
+                    <span class="toggleState toggleOn">Yes</span>
+                  </span>
+                </label>
                 <p id="checkedBagHelp" class="tiny"></p>
               </div>
               <div class="destinationTools">
-                <div class="fields">
-                  <div>
-                    <label class="lbl" for="homeCountry">Home country / territory</label>
-                    <select id="homeCountry"></select>
-                  </div>
-                  <div>
-                    <label class="lbl" for="internationalMode">International items</label>
-                    <select id="internationalMode">
-                      <option value="auto">Automatic by country</option>
-                      <option value="manual">Set manually in packing rules</option>
-                    </select>
-                  </div>
-                </div>
-                <p id="homeSettingsHint" class="tiny"></p>
-                <p id="internationalStatus" class="tiny"></p>
+                <button id="weatherBtn" class="slim" type="button">Check trip weather</button>
+                <p id="weatherStatus" class="tiny" role="status"></p>
+                <div id="weatherDays"></div>
                 <label class="lbl" for="weatherMode">Weather packing rules</label>
                 <select id="weatherMode">
                   <option value="auto">Automatic from forecast</option>
@@ -103,13 +93,10 @@
                 </select>
                 <p id="weatherRulesStatus" class="tiny" role="status"></p>
                 <p class="tiny"><a href="#settings">Change your weather thresholds</a></p>
-                <button id="weatherBtn" class="slim" type="button">Check trip weather</button>
-                <p id="weatherStatus" class="tiny" role="status"></p>
-                <div id="weatherDays"></div>
                 <p class="tiny">Location and weather lookups use <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a> and <a href="https://www.geonames.org/" target="_blank" rel="noopener noreferrer">GeoNames</a>. Automatic weather rules use your personal thresholds.</p>
               </div>
               </div>
-            </details>
+            </section>
           </div>
         </details>
 
@@ -216,6 +203,11 @@
             <select id="settingsHomeCountry" autocomplete="country"></select></div>
         </div>
         <p class="tiny">Choose the country for your home location. Trips using home settings compare this country with the destination to set international items.</p>
+        <div class="tripHomeSettings">
+          <label class="lbl" for="homeCountry">Home country / territory for this trip</label>
+          <select id="homeCountry" aria-describedby="homeSettingsHint"></select>
+          <p id="homeSettingsHint" class="tiny"></p>
+        </div>
         <h3>Weather preferences</h3>
         <div class="fields">
           <div><label class="lbl" for="hotTemperature">Hot at or above (°C)</label>
@@ -296,6 +288,16 @@
                 <input id="rainPlace" class="toggleInput" type="checkbox">
                 <span class="ruleToggleButton" aria-hidden="true"><span class="toggleState toggleOff">Off</span><span class="toggleState toggleOn">On</span></span>
               </label>
+
+              <div class="internationalRuleSettings">
+                <label class="lbl" for="internationalMode">International items</label>
+                <select id="internationalMode">
+                  <option value="auto">Automatic by country</option>
+                  <option value="manual">Set manually below</option>
+                </select>
+                <p id="internationalStatus" class="tiny"></p>
+                <a class="tiny" href="#settings">Change home country in Settings</a>
+              </div>
 
               <label class="rule toggleRule">
                 <div>

@@ -568,7 +568,7 @@
       els.location.value = trip.location || '';
     }
 
-    els.usesCheckedBag.value = String(trip.usesCheckedBag);
+    els.usesCheckedBag.checked = Boolean(trip.usesCheckedBag);
     document.body.classList.toggle('noCheckedBag', !trip.usesCheckedBag);
     byId('checkedBagHelp').textContent = trip.usesCheckedBag
       ? 'Split quantities between your checked bag and carry-on.'
@@ -1379,6 +1379,7 @@
     const prefs = preferences();
     byId('settingsHomeLocation').value = prefs.homeLocation;
     byId('settingsHomeCountry').value = prefs.homeCountry;
+    byId('homeCountry').value = getCurrentTrip().homeCountry;
     byId('hotTemperature').value = prefs.hotTemperature;
     byId('rainProbability').value = prefs.rainProbability;
   }
@@ -1505,7 +1506,7 @@
     byId('weatherMode').value = trip.weatherMode || 'auto';
     byId('homeSettingsHint').textContent = preferences().homeCountry
       ? `Home settings: ${[preferences().homeLocation, preferences().homeCountry].filter(Boolean).join(', ')}. You can override the country for this trip.`
-      : 'Set your home location and country in Settings, or choose a country for this trip.';
+      : 'Choose your home country above, or set an override for this trip here.';
     const search = destinationSearch.key === destinationKey(trip) ? destinationSearch : null;
     byId('destinationStatus').textContent = search?.message || (trip.destination
       ? `Confirmed destination: ${destinationLabel(trip.destination)}`
@@ -1521,7 +1522,7 @@
     byId('internationalStatus').textContent = trip.internationalMode === 'manual'
       ? `Manual setting: international items ${trip.rules.international ? 'on' : 'off'}. Change this in Packing rules, or choose automatic detection above.`
       : !homeCountryFor(trip) || !trip.destination
-        ? 'Choose your home country and confirm a destination. Your existing international setting stays unchanged until both are known.'
+        ? 'Choose your home country in Settings and confirm a destination. Your existing international setting stays unchanged until both are known.'
         : `${trip.rules.international ? 'International' : 'Domestic'} relative to your home country — international items ${trip.rules.international ? 'on' : 'off'}. This compares country/territory codes; you can override it in Packing rules.`;
     const weather = weatherResult.key === weatherKey(trip) ? weatherResult : null;
     byId('weatherBtn').disabled = !trip.destination || Boolean(weather?.loading);
@@ -1628,7 +1629,7 @@
 
   function wireTripControls() {
     els.usesCheckedBag.addEventListener('change', () => {
-      getCurrentTrip().usesCheckedBag = els.usesCheckedBag.value === 'true';
+      getCurrentTrip().usesCheckedBag = els.usesCheckedBag.checked;
       save();
       render();
       showToast(getCurrentTrip().usesCheckedBag ? 'Checked bag and carry-on quantities shown' : 'Bag quantities combined. Your packing list is preserved.');
