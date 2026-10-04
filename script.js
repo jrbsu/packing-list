@@ -738,8 +738,6 @@
     const active = document.activeElement;
     const focusKey = els.tables.contains(active) ? { ...active.dataset } : null;
     const visibleItems = getVisibleItems(trip);
-    const openDetails = new Set([...els.tables.querySelectorAll('details[open]')]
-      .map(detail => detail.dataset.itemDetails));
 
     els.tables.innerHTML = '';
 
@@ -753,9 +751,6 @@
       if (!categoryItems.length) continue;
 
       els.tables.appendChild(makeCategorySection(trip, category, categoryItems));
-    }
-    for (const detail of els.tables.querySelectorAll('details[data-item-details]')) {
-      detail.open = openDetails.has(detail.dataset.itemDetails);
     }
     if (focusKey) {
       const replacement = [...els.tables.querySelectorAll('input, select, button, [tabindex]')].find((element) =>
@@ -793,6 +788,7 @@
           <thead>
             <tr>
               <th>Item</th>
+              <th class="ruleCol">Packing rule</th>
               ${trip.usesCheckedBag ? '<th class="num">Checked bag</th><th class="num">Carry-on</th><th class="num">Total</th>' : '<th class="num">Quantity</th>'}
               <th class="pack">Packed</th>
               <th class="actionsCol">Actions</th>
@@ -834,9 +830,6 @@
             value="${escapeHtml(item.name)}"
             aria-label="Item name"
           >
-          <details class="itemDetails" data-item-details="${escapeHtml(item.id)}">
-            <summary>${item.note ? 'Note & packing rule' : 'Notes & packing rule'}</summary>
-            <div class="itemDetailsBody">
           <input
             class="note"
             data-id="${escapeHtml(item.id)}"
@@ -846,14 +839,14 @@
             placeholder="Note"
             aria-label="Item note"
           >
+        </div>
+      </td>
+      <td class="ruleCol" data-label="Packing rule">
         <select data-id="${escapeHtml(item.id)}" data-field="rule" aria-label="Packing rule for ${escapeHtml(item.name)}">
           ${Object.entries(RULES).map(([value, label]) => `
             <option value="${value}" ${item.rule === value ? 'selected' : ''}>${label}</option>
           `).join('')}
         </select>
-            </div>
-          </details>
-        </div>
       </td>
 
       ${trip.usesCheckedBag ? `
