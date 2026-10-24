@@ -1502,7 +1502,6 @@
       if (trip.weatherMode === 'auto' && weatherResult.key !== weatherKey(trip) && trip.destination) checkWeather();
     });
     byId('rainPlace').addEventListener('change', event => updateTripRule('rainPlace', event.target.checked));
-    renderPage();
   }
 
   // Open-Meteo daily WMO codes describe the day's most severe condition.
@@ -1864,12 +1863,25 @@
   }
 
   function wirePackingListControls() {
+    els.tables.addEventListener('input', (event) => {
+      const { id, field } = event.target.dataset;
+      if (!id || !['quantity', 'checked', 'carryon'].includes(field)) return;
+      // Ignore an empty or incomplete number while the user is still typing.
+      if (event.target.value === '' || !Number.isFinite(Number(event.target.value))) return;
+      updateItem(id, field, event.target.value);
+    });
+
     els.tables.addEventListener('change', (event) => {
       const itemId = event.target.dataset.id;
       const field = event.target.dataset.field;
 
       if (!itemId || !field) return;
 
+      const item = getCurrentTrip().items.find(item => item.id === itemId);
+      if (item && ['quantity', 'checked', 'carryon'].includes(field)) {
+        const current = field === 'quantity' ? getItemTotal(item) : wholeNumber(item[field]);
+        if (current === wholeNumber(event.target.value)) return;
+      }
       updateItem(itemId, field, event.target.value);
     });
 
@@ -2027,5 +2039,7 @@
 
   wireEvents();
   render();
+  // Populate saved values before routing focuses the Trip field.
+  renderPage();
   save();
 })();

@@ -4,25 +4,26 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 // Exercise the actual app functions with a minimal DOM adapter, without dependencies.
-function app() {
+function app(savedEntries = [], runStartup = false) {
   const elements = new Map();
   function element() {
-    return { value: '', dataset: {}, textContent: '', hidden: false, children: [], _innerHTML: '',
+    return { parentElement: { setAttribute() {} }, value: '', dataset: {}, textContent: '', hidden: false, children: [], _innerHTML: '',
       get innerHTML() { return this._innerHTML; },
       set innerHTML(value) { this._innerHTML = value; this.children = []; },
       appendChild(child) { this.children.push(child); },
-      classList: { add() {}, remove() {}, toggle() {} },
+      classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
       add() {}, setAttribute() {}, closest() { return this; }, addEventListener(type, handler) { this.listeners[type] = handler; },
-      listeners: {}, focus() {}, style: {}, contains() { return false; },
+      listeners: {}, focus() { document.activeElement = this; }, style: {}, contains() { return false; },
+      querySelector() { return element(); }, querySelectorAll() { return []; },
     };
   }
   const document = {
     getElementById(id) { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); },
     createElement: element,
     querySelector() { return element(); },
-    body: element(), activeElement: null,
+    body: element(), documentElement: element(), activeElement: null, addEventListener() {},
   };
-  const storage = new Map();
+  const storage = new Map(savedEntries);
   const context = vm.createContext({ document, console, setTimeout, clearTimeout, AbortController,
     window: { location: { hash: '' }, addEventListener() {} },
     Option: function Option(label, value) { this.label = label; this.value = value; },
@@ -32,7 +33,7 @@ function app() {
   const startup = source.lastIndexOf('  for (const trip of state.trips) {');
   vm.runInContext(source.slice(0, startup) + `
     globalThis.api = { makeDefaultTrip, normaliseTrip, normaliseState, recalculateTrip,
-      getItemTotal, getTripStats, getVisibleItems, togglePacked, markVisibleItemsAs, captureItemUndo, undoLastAction, quantityControl, getPackingDays, getClothingSetsNeeded,
+      getItemTotal, getTripStats, getVisibleItems, togglePacked, markVisibleItemsAs, captureItemUndo, undoLastAction, quantityControl, wirePackingListControls, getPackingDays, getClothingSetsNeeded,
       applyInternationalDetection, forecastDays, weatherCondition, normalisePreferences, preferences,
       weatherDecision, applyWeatherRules, savePreferences, renderDestinationTools, renderPage, wireSettings, weatherKey, validDestination, findDestination, checkWeather,
       selectDestination, scheduleDestinationSearch, dismissDestinationSearch,
@@ -40,7 +41,7 @@ function app() {
       renderTripForm, renderCalendar, makeItemRow, updateItem, addItem, duplicateCurrentTrip, deletePastTrips, isPastTrip, save, filters, els,
       getState: () => state, setState: value => { state = value; },
       disableRender: () => { render = () => {}; } };
-  })();`, context);
+  ` + (runStartup ? source.slice(startup) : '\n})();'), context);
   return { ...context.api, context, storage };
 }
 
@@ -377,6 +378,7 @@ test('settings route shows preferences and form submission saves the entered val
   const byId = id => a.context.document.getElementById(id);
   a.context.window.location.hash = '#settings';
   a.wireSettings();
+  a.renderPage();
   assert.equal(byId('plannerPage').hidden, true);
   assert.equal(byId('rulesCard').hidden, true);
   assert.equal(byId('settingsPage').hidden, false);
@@ -567,4 +569,59 @@ test('quantity controls support each bag and disable decrement at zero', () => {
   assert.match(a.quantityControl(item, 'carryon', 'Carry-on quantity'), /value="2"/);
   assert.match(a.quantityControl(item, 'quantity', 'Quantity'), /data-step-field="quantity"/);
   assert.match(a.quantityControl(item, 'quantity', 'Quantity'), /aria-label="Increase Quantity for Socks"/);
+});
+
+
+test('quantity input immediately enables packing from zero in both bag modes', () => {
+  for (const field of ['quantity', 'checked', 'carryon']) {
+    const a = app(); a.disableRender();
+    const trip = a.makeDefaultTrip(); trip.usesCheckedBag = field !== 'quantity';
+    const item = trip.items[0]; item.checked = 0; item.carryon = 0; item.packed = false;
+    a.setState({ trips: [trip], currentTripId: trip.id });
+    a.wirePackingListControls();
+    assert.match(a.makeItemRow(item, trip).innerHTML, /aria-pressed="false"\s+disabled/);
+    const target = { dataset: { id: item.id, field }, value: '1' };
+    a.els.tables.listeners.input({ target });
+    assert.equal(a.getItemTotal(item), 1); assert.equal(item.rule, 'manual');
+    assert.doesNotMatch(a.makeItemRow(item, trip).innerHTML, /aria-pressed="false"\s+disabled/);
+    a.els.tables.listeners.change({ target });
+    a.undoLastAction();
+    assert.equal(a.getItemTotal(item), 0);
+    a.els.tables.listeners.input({ target });
+    a.togglePacked(item.id); assert.equal(item.packed, true);
+    a.undoLastAction();
+  }
+});
+
+
+test('saved trips reload through startup with names, quantities, packing, and preferences intact', () => {
+  const a = app(); a.disableRender();
+  const trip = a.getState().trips[0];
+  trip.name = 'Saved trip'; trip.location = 'Paris'; trip.homeCountry = 'US';
+  trip.internationalMode = 'auto';
+  trip.destination = { name: 'Paris', country_code: 'FR', latitude: 48.85, longitude: 2.35 };
+  const item = trip.items[0];
+  a.updateItem(item.id, 'quantity', 7);
+  a.togglePacked(item.id);
+  a.getState().preferences = { homeCountry: 'US', theme: 'dark' };
+  a.save();
+  const b = app(a.storage);
+  const reloaded = b.getState().trips[0];
+  assert.equal(reloaded.name, 'Saved trip'); assert.equal(reloaded.location, 'Paris');
+  assert.equal(b.getItemTotal(reloaded.items[0]), 7); assert.equal(reloaded.items[0].packed, true);
+  assert.equal(b.getState().currentTripId, trip.id);
+  assert.equal(b.preferences().theme, 'dark');
+  a.undoLastAction();
+});
+
+
+test('full startup displays the saved trip before focusing its name field', () => {
+  const a = app(); const trip = a.getState().trips[0];
+  trip.name = 'Saved trip visible on reload'; trip.location = 'Paris'; a.save();
+  const b = app(a.storage, true);
+  assert.equal(b.els.tripName.value, trip.name);
+  assert.equal(b.els.location.value, 'Paris');
+  assert.equal(b.context.document.activeElement, b.els.tripName);
+  assert.equal(b.getState().currentTripId, trip.id);
+  assert.equal(JSON.parse(b.storage.get('packingPlanner.v2')).trips[0].name, trip.name);
 });
