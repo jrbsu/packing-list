@@ -13,6 +13,10 @@ Country detection compares country/territory codes, not entry requirements or ci
 
 Lookups require internet access and send the destination query or coordinates to Open-Meteo. No API key is needed for its public non-commercial service. Commercial deployment requires reviewing [Open-Meteo's licence and plans](https://open-meteo.com/en/pricing). Location data is provided by GeoNames via Open-Meteo.
 
+## Appearance
+
+The planner uses blue accents in light mode and navy surfaces in dark mode. Use the header’s Light / Dark button to switch immediately, or choose **Use device setting**, **Light**, or **Dark** under Settings → Appearance. Your choice is saved in this browser and included in exports. Device mode follows system appearance changes.
+
 ## Personal settings
 
 Open **Settings** in the header to save your home city and country, hot temperature (default 25°C), and jacket rain probability (default 50%). Thresholds are inclusive and use each day’s high temperature and maximum precipitation probability. Settings are saved locally and included in import/export. Home city is a descriptive label; the selected country drives international detection for trips set to **Use home settings**. A trip can override that country.

@@ -5,6 +5,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Packing Planner</title>
+  <meta name="color-scheme" content="light dark" />
+  <script src="theme.js"></script>
   <link rel="stylesheet" href="style.css" />
 </head>
 
@@ -25,6 +27,7 @@
         <span id="progressText">0%</span>
       </div>
       <div class="actions">
+        <button id="themeToggle" type="button" class="ghost" aria-label="Switch color mode">☾ Dark</button>
         <a class="buttonLink" href="#settings">Settings</a>
         <select id="tripPicker" class="tripSelect" aria-label="Choose saved trip"></select>
         <button id="newTripBtn" class="primary">New trip</button>
@@ -36,6 +39,7 @@
         <button id="importBtn">Import</button>
         <button id="jsonBtn" class="ghost">Save text</button>
             <button id="deleteTripBtn" class="danger slim">Delete trip</button>
+            <button id="deletePastTripsBtn" class="danger slim">Delete past trips</button>
           </div>
         </details>
         <input id="importFile" class="hidden" type="file" accept="application/json,.json">
@@ -148,7 +152,11 @@
 
       <div class="cardBody">
         <div class="toolbar">
-          <input id="searchItems" aria-label="Search items" type="text" placeholder="Search items…">
+          <select id="packedFilter" aria-label="Filter packing status">
+            <option value="all">All statuses</option>
+            <option value="packed">Packed</option>
+            <option value="unpacked">Unpacked</option>
+          </select>
           <select id="categoryFilter" aria-label="Filter category"></select>
           <select id="bagFilter" aria-label="Filter bag">
             <option value="all">All bags</option>
@@ -156,7 +164,7 @@
             <option value="carryon">Carry-on</option>
           </select>
           <label class="checkline">
-            <input id="missingOnly" type="checkbox"> Missing only
+            <input id="hideZeroCount" type="checkbox"> Hide zero-count items
           </label>
         </div>
       </div>
@@ -195,6 +203,14 @@
       <div class="cardHead"><div><h2 id="settingsTitle" tabindex="-1">Your settings</h2>
         <p class="tiny">Your home base and weather preferences, saved in this browser for all trips.</p></div></div>
       <form id="settingsForm" class="cardBody">
+        <h3>Appearance</h3>
+        <label class="lbl" for="themePreference">Color mode</label>
+        <select id="themePreference" aria-describedby="themeHelp">
+          <option value="system">Use device setting</option>
+          <option value="light">Light — blue</option>
+          <option value="dark">Dark — navy</option>
+        </select>
+        <p id="themeHelp" class="tiny">Changes apply immediately and are remembered in this browser.</p>
         <h3>Home location</h3>
         <div class="fields">
           <div><label class="lbl" for="settingsHomeLocation">Home city / location</label>

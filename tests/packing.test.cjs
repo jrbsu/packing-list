@@ -32,12 +32,12 @@ function app() {
   const startup = source.lastIndexOf('  for (const trip of state.trips) {');
   vm.runInContext(source.slice(0, startup) + `
     globalThis.api = { makeDefaultTrip, normaliseTrip, normaliseState, recalculateTrip,
-      getItemTotal, getTripStats, getVisibleItems, getPackingDays, getClothingSetsNeeded,
+      getItemTotal, getTripStats, getVisibleItems, togglePacked, markVisibleItemsAs, captureItemUndo, undoLastAction, quantityControl, getPackingDays, getClothingSetsNeeded,
       applyInternationalDetection, forecastDays, weatherCondition, normalisePreferences, preferences,
       weatherDecision, applyWeatherRules, savePreferences, renderDestinationTools, renderPage, wireSettings, weatherKey, validDestination, findDestination, checkWeather,
       selectDestination, scheduleDestinationSearch, dismissDestinationSearch,
       getSearch: () => destinationSearch, getWeather: () => weatherResult,
-      renderTripForm, renderCalendar, makeItemRow, updateItem, addItem, duplicateCurrentTrip, save, filters, els,
+      renderTripForm, renderCalendar, makeItemRow, updateItem, addItem, duplicateCurrentTrip, deletePastTrips, isPastTrip, save, filters, els,
       getState: () => state, setState: value => { state = value; },
       disableRender: () => { render = () => {}; } };
   })();`, context);
@@ -411,4 +411,160 @@ test('calendar forecast notes match table thresholds and disappear for stale tri
   assert.match(day().innerHTML, /weatherIcon/);
   trip.returnDate = '2026-06-19'; a.renderCalendar(trip);
   assert.doesNotMatch(day().innerHTML, /dayWeather|weatherIcon/);
+});
+
+test('past trips use local calendar dates and exclude today, missing and invalid dates', () => {
+  const a = app();
+  for (const [returnDate, expected] of [['2026-10-03', true], ['2026-10-04', false],
+    ['2026-10-05', false], ['', false], ['invalid', false], ['2026-02-30', false]]) {
+    assert.equal(a.isPastTrip({ returnDate }, '2026-10-04'), expected);
+  }
+});
+
+test('bulk deletion warns about backup and cancellation preserves all data', () => {
+  const a = app(); a.disableRender();
+  a.getState().trips[0].returnDate = '2000-01-01';
+  const before = JSON.stringify(a.getState());
+  a.context.confirm = message => {
+    assert.match(message, /Back up.*Export/);
+    assert.match(message, /Delete 1 past trip/);
+    assert.match(message, /cannot be undone/);
+    return false;
+  };
+  a.deletePastTrips();
+  assert.equal(JSON.stringify(a.getState()), before);
+  assert.equal(a.storage.size, 0);
+});
+
+test('bulk deletion keeps future and undated trips, preserves selection, and saves', () => {
+  const a = app(); a.disableRender();
+  const past = a.makeDefaultTrip(); past.returnDate = '2000-01-01';
+  const future = a.makeDefaultTrip(); future.returnDate = '2999-01-01';
+  const undated = a.makeDefaultTrip(); undated.returnDate = '';
+  a.setState({ trips: [past, future, undated], currentTripId: future.id });
+  a.context.confirm = () => true;
+  a.deletePastTrips();
+  assert.equal(a.getState().trips.length, 2);
+  assert.equal(a.getState().currentTripId, future.id);
+  assert.equal(JSON.parse(a.storage.get('packingPlanner.v2')).trips.length, 2);
+  a.context.confirm = () => { throw new Error('No confirmation needed without past trips'); };
+  a.deletePastTrips();
+});
+
+test('deleting every past trip creates an undated replacement and preserves preferences', () => {
+  const a = app(); a.disableRender();
+  a.getState().trips[0].returnDate = '2000-01-01';
+  a.getState().preferences.hotTemperature = 28;
+  const oldId = a.getState().currentTripId;
+  a.context.confirm = () => true;
+  a.deletePastTrips();
+  assert.equal(a.getState().trips.length, 1);
+  assert.notEqual(a.getState().currentTripId, oldId);
+  assert.equal(a.getState().currentTripId, a.getState().trips[0].id);
+  assert.equal(a.getState().trips[0].returnDate, '');
+  assert.equal(a.getState().preferences.hotTemperature, 28);
+});
+
+test('theme restores saved preference, follows device changes, and respects explicit mode', () => {
+  const root = { dataset: {} };
+  const toggle = { setAttribute(name, value) { this[name] = value; } };
+  let onChange;
+  const media = { matches: true, addEventListener(type, handler) { onChange = handler; } };
+  const context = vm.createContext({
+    window: { matchMedia: () => media },
+    document: { documentElement: root, getElementById: () => toggle },
+    localStorage: { getItem: () => JSON.stringify({ preferences: { theme: 'light' } }) },
+  });
+  vm.runInContext(fs.readFileSync('theme.js', 'utf8'), context);
+  assert.equal(root.dataset.theme, 'light');
+  assert.equal(toggle['aria-label'], 'Switch to dark mode');
+  context.window.packingTheme.apply('system');
+  assert.equal(root.dataset.theme, 'dark');
+  media.matches = false; onChange();
+  assert.equal(root.dataset.theme, 'light');
+  context.window.packingTheme.apply('dark');
+  onChange();
+  assert.equal(root.dataset.theme, 'dark');
+  assert.equal(toggle['aria-label'], 'Switch to light mode');
+});
+
+test('theme uses device preference when stored data is unavailable', () => {
+  const root = { dataset: {} };
+  const context = vm.createContext({
+    window: { matchMedia: () => ({ matches: true, addEventListener() {} }) },
+    document: { documentElement: root, getElementById: () => null },
+    localStorage: { getItem() { throw new Error('Storage unavailable'); } },
+  });
+  vm.runInContext(fs.readFileSync('theme.js', 'utf8'), context);
+  assert.equal(root.dataset.theme, 'dark');
+});
+
+test('appearance preference is validated and saved with planner settings', () => {
+  const a = app(); a.disableRender();
+  assert.equal(a.normalisePreferences({ theme: 'unexpected' }).theme, 'system');
+  a.savePreferences({ theme: 'dark', hotTemperature: 28 });
+  const saved = a.normaliseState(JSON.parse(a.storage.get('packingPlanner.v2')));
+  assert.equal(saved.preferences.theme, 'dark');
+  assert.equal(saved.preferences.hotTemperature, 28);
+});
+
+test('packing filters combine status, zero counts, category, and bag', () => {
+  const a = app();
+  const trip = { usesCheckedBag: true, items: [
+    { id: 'packed', category: 'clothes', checked: 1, carryon: 0, packed: true },
+    { id: 'waiting', category: 'clothes', checked: 0, carryon: 2, packed: false },
+    { id: 'unused', category: 'other', checked: 0, carryon: 0, packed: false },
+  ] };
+  const visible = () => Array.from(a.getVisibleItems(trip), item => item.id);
+  assert.deepEqual(visible(), ['packed', 'waiting', 'unused']);
+  a.filters.hideZeroCount = true;
+  assert.deepEqual(visible(), ['packed', 'waiting']);
+  a.filters.packed = 'packed';
+  assert.deepEqual(visible(), ['packed']);
+  a.filters.packed = 'unpacked';
+  assert.deepEqual(visible(), ['waiting']);
+  a.filters.hideZeroCount = false;
+  assert.deepEqual(visible(), ['waiting']);
+  a.filters.bag = 'checked';
+  assert.deepEqual(visible(), []);
+  a.filters.packed = 'all';
+  assert.deepEqual(visible(), ['packed']);
+  a.filters.category = 'other';
+  assert.deepEqual(visible(), []);
+});
+
+
+test('undo restores quantity, automatic rule, and packed status together', () => {
+  const a = app(); a.disableRender();
+  const trip = a.makeDefaultTrip(); a.recalculateTrip(trip);
+  a.setState({ trips: [trip], currentTripId: trip.id });
+  const item = trip.items[0]; item.packed = true;
+  const before = JSON.stringify(item);
+  a.updateItem(item.id, 'quantity', 9);
+  assert.equal(item.rule, 'manual'); assert.equal(item.packed, false);
+  a.undoLastAction();
+  assert.equal(JSON.stringify(item), before);
+  assert.equal(JSON.parse(a.storage.get('packingPlanner.v2')).trips[0].items[0].packed, true);
+});
+
+test('undo packing preserves later unrelated edits and restores deletion position', () => {
+  const a = app(); a.disableRender();
+  const trip = a.makeDefaultTrip(); a.recalculateTrip(trip);
+  a.setState({ trips: [trip], currentTripId: trip.id });
+  const item = trip.items[0];
+  a.togglePacked(item.id);
+  item.name = 'Renamed';
+  a.undoLastAction();
+  assert.equal(item.packed, false); assert.equal(item.name, 'Renamed');
+  const offerUndo = a.captureItemUndo();
+  trip.items.splice(0, 1); offerUndo('Deleted'); a.undoLastAction();
+  assert.equal(trip.items[0].id, item.id);
+});
+
+test('quantity controls support each bag and disable decrement at zero', () => {
+  const a = app(); const item = { id: 'one', name: 'Socks', checked: 0, carryon: 2 };
+  assert.match(a.quantityControl(item, 'checked', 'Checked quantity'), /data-step="-1"[^>]*disabled/);
+  assert.match(a.quantityControl(item, 'carryon', 'Carry-on quantity'), /value="2"/);
+  assert.match(a.quantityControl(item, 'quantity', 'Quantity'), /data-step-field="quantity"/);
+  assert.match(a.quantityControl(item, 'quantity', 'Quantity'), /aria-label="Increase Quantity for Socks"/);
 });

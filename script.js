@@ -254,6 +254,7 @@
     const number = (value, fallback, min, max) =>
       typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max ? value : fallback;
     return {
+      theme: ['light', 'dark', 'system'].includes(raw.theme) ? raw.theme : 'system',
       homeLocation: typeof raw.homeLocation === 'string' ? raw.homeLocation : '',
       homeCountry: typeof raw.homeCountry === 'string' && /^[A-Z]{2}$/.test(raw.homeCountry) ? raw.homeCountry : '',
       hotTemperature: number(raw.hotTemperature, 25, -50, 60),
@@ -326,13 +327,14 @@
   let state = loadState();
 
   const filters = {
-    search: '',
+    packed: 'all',
     category: 'all',
     bag: 'all',
-    missingOnly: false,
+    hideZeroCount: false,
   };
 
   let toastTimer = null;
+  let pendingUndo = null;
   let recentlyPackedItemId = null;
   let shineTimer = null;
 
@@ -360,10 +362,10 @@
     dateHint: byId('dateHint'),
 
     tables: byId('tables'),
-    searchItems: byId('searchItems'),
+    packedFilter: byId('packedFilter'),
     categoryFilter: byId('categoryFilter'),
     bagFilter: byId('bagFilter'),
-    missingOnly: byId('missingOnly'),
+    hideZeroCount: byId('hideZeroCount'),
 
     newItemName: byId('newItemName'),
     newItemCategory: byId('newItemCategory'),
@@ -466,16 +468,7 @@
   }
 
   function getVisibleItems(trip = getCurrentTrip()) {
-    const search = filters.search.trim().toLowerCase();
-
     return trip.items.filter((item) => {
-      const searchableText = [
-        item.name,
-        CATEGORIES[item.category],
-        RULES[item.rule],
-      ].join(' ').toLowerCase();
-
-      const matchesSearch = !search || searchableText.includes(search);
       const matchesCategory = filters.category === 'all' || item.category === filters.category;
       const matchesBag =
         !trip.usesCheckedBag || filters.bag === 'all' ||
@@ -483,11 +476,11 @@
         (filters.bag === 'carryon' && wholeNumber(item.carryon) > 0);
       const isRecentlyPacked = item.id === recentlyPackedItemId && item.packed;
 
-      const matchesMissingOnly =
-        !filters.missingOnly ||
-        isRecentlyPacked ||
-        (isItemUsed(item) && !item.packed);
-      return matchesSearch && matchesCategory && matchesBag && matchesMissingOnly;
+      const matchesPacked = filters.packed === 'all' ||
+        (filters.packed === 'packed' && isItemUsed(item) && item.packed) ||
+        (filters.packed === 'unpacked' && isItemUsed(item) && (!item.packed || isRecentlyPacked));
+      const matchesQuantity = !filters.hideZeroCount || isItemUsed(item);
+      return matchesCategory && matchesBag && matchesPacked && matchesQuantity;
     });
   }
 
@@ -513,14 +506,59 @@
     }
   }
 
-  function showToast(message) {
-    els.toast.textContent = message;
+  function showToast(message, undo = null) {
+    pendingUndo = undo;
+    els.toast.textContent = '';
+    const text = document.createElement('span');
+    text.textContent = message;
+    els.toast.appendChild(text);
+    if (undo) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = 'Undo';
+      button.addEventListener('click', undoLastAction);
+      els.toast.appendChild(button);
+    }
     els.toast.classList.add('show');
-
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => {
+      pendingUndo = null;
       els.toast.classList.remove('show');
-    }, 2200);
+    }, undo ? 10000 : 2200);
+  }
+
+  function undoLastAction() {
+    if (!pendingUndo) return;
+    const undo = pendingUndo;
+    pendingUndo = null;
+    clearTimeout(shineTimer);
+    recentlyPackedItemId = null;
+    undo();
+    save();
+    render();
+    showToast('Change undone');
+  }
+
+  // Restore only fields changed by this action, preserving later unrelated edits.
+  function captureItemUndo(trip = getCurrentTrip()) {
+    const before = JSON.parse(JSON.stringify(trip.items));
+    return (message) => {
+      const after = JSON.parse(JSON.stringify(trip.items));
+      showToast(message, () => {
+        const target = state.trips.find(candidate => candidate.id === trip.id);
+        if (!target) return;
+        before.forEach((oldItem, index) => {
+          const changed = after.find(item => item.id === oldItem.id);
+          const current = target.items.find(item => item.id === oldItem.id);
+          if (!changed && !current) target.items.splice(index, 0, oldItem);
+          else if (changed && current) {
+            for (const key of Object.keys(oldItem)) {
+              if (oldItem[key] !== changed[key] && current[key] === changed[key]) current[key] = oldItem[key];
+            }
+          }
+        });
+      });
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -808,6 +846,17 @@
     return section;
   }
 
+  function quantityControl(item, field, label) {
+    const value = field === 'quantity' ? getItemTotal(item) : wholeNumber(item[field]);
+    const id = escapeHtml(item.id);
+    const name = escapeHtml(`${label} for ${item.name}`);
+    return `<div class="quantityControl">
+      <button type="button" data-id="${id}" data-step-field="${field}" data-step="-1" aria-label="Decrease ${name}" ${value === 0 ? 'disabled' : ''}>−</button>
+      <input data-id="${id}" data-field="${field}" type="number" min="0" step="1" value="${value}" aria-label="${name}">
+      <button type="button" data-id="${id}" data-step-field="${field}" data-step="1" aria-label="Increase ${name}">+</button>
+    </div>`;
+  }
+
   function makeItemRow(item, trip) {
     const row = document.createElement('tr');
     row.dataset.itemId = item.id;
@@ -841,10 +890,10 @@
       </td>
 
       ${trip.usesCheckedBag ? `
-      <td class="num" data-label="Checked bag"><input data-id="${escapeHtml(item.id)}" data-field="checked" type="number" min="0" step="1" value="${wholeNumber(item.checked)}" aria-label="Checked bag quantity for ${escapeHtml(item.name)}"></td>
-      <td class="num" data-label="Carry-on"><input data-id="${escapeHtml(item.id)}" data-field="carryon" type="number" min="0" step="1" value="${wholeNumber(item.carryon)}" aria-label="Carry-on quantity for ${escapeHtml(item.name)}"></td>
+      <td class="num" data-label="Checked bag">${quantityControl(item, 'checked', 'Checked bag quantity')}</td>
+      <td class="num" data-label="Carry-on">${quantityControl(item, 'carryon', 'Carry-on quantity')}</td>
       <td class="num total" data-label="Total">${getItemTotal(item)}</td>` : `
-      <td class="num" data-label="Quantity"><input data-id="${escapeHtml(item.id)}" data-field="quantity" type="number" min="0" step="1" value="${getItemTotal(item)}" aria-label="Quantity for ${escapeHtml(item.name)}"></td>`}
+      <td class="num" data-label="Quantity">${quantityControl(item, 'quantity', 'Quantity')}</td>`}
 
       <td class="pack">
         <button
@@ -954,6 +1003,7 @@
 
     if (!item) return;
 
+    const offerUndo = captureItemUndo(currentTrip);
     const previousTotal = getItemTotal(item);
     if (field === 'quantity') {
       const quantity = wholeNumber(value);
@@ -979,6 +1029,7 @@
 
     save();
     render();
+    if (['quantity', 'checked', 'carryon'].includes(field)) offerUndo(`Quantity updated for ${item.name}`);
   }
 
   function togglePacked(itemId) {
@@ -987,6 +1038,7 @@
 
     if (!item || !isItemUsed(item)) return;
 
+    const offerUndo = captureItemUndo(currentTrip);
     const willBePacked = !item.packed;
     item.packed = willBePacked;
 
@@ -997,6 +1049,7 @@
     save();
     render();
 
+    offerUndo(`${item.name} ${willBePacked ? 'packed' : 'unpacked'}`);
     if (willBePacked) {
       shineTimer = setTimeout(() => {
         recentlyPackedItemId = null;
@@ -1041,6 +1094,7 @@
   }
 
   function markVisibleItemsAs(packed) {
+    const offerUndo = captureItemUndo();
     let count = 0;
 
     for (const item of getVisibleItems().filter((item) => !getCurrentTrip().collapsedCats[item.category])) {
@@ -1053,7 +1107,7 @@
     save();
     render();
 
-    showToast(`${packed ? 'Packed' : 'Unpacked'} ${count} visible ${pluralise(count, 'item')}`);
+    offerUndo(`${packed ? 'Packed' : 'Unpacked'} ${count} visible ${pluralise(count, 'item')}`);
   }
 
   function createNewTrip() {
@@ -1116,6 +1170,40 @@
     showToast('Trip deleted');
   }
 
+  function isPastTrip(trip, today = toIsoDate(new Date())) {
+    const date = parseIsoDate(trip.returnDate);
+    return Boolean(date && toIsoDate(date) === trip.returnDate && trip.returnDate < today);
+  }
+
+  function deletePastTrips() {
+    const today = toIsoDate(new Date());
+    const pastTrips = state.trips.filter(trip => isPastTrip(trip, today));
+    if (!pastTrips.length) {
+      showToast('No trips have a return date before today');
+      return;
+    }
+
+    const count = pastTrips.length;
+    if (!confirm(`Back up your trips first using More → Export.\n\nDelete ${count} past ${pluralise(count, 'trip')} with a return date before ${today}? This cannot be undone. Trips returning today are kept.\n\nChoose Cancel to make a backup first, or OK to permanently delete these trips.`)) return;
+
+    const deletedIds = new Set(pastTrips.map(trip => trip.id));
+    state.trips = state.trips.filter(trip => !deletedIds.has(trip.id));
+    if (!state.trips.length) {
+      const blank = makeDefaultTrip();
+      Object.assign(blank, {
+        name: 'New trip', location: '', leaveDate: '', returnDate: '',
+        calendarMonth: getMonthKey(new Date()),
+      });
+      recalculateTrip(blank);
+      state.trips.push(blank);
+    }
+    if (deletedIds.has(state.currentTripId)) state.currentTripId = state.trips[0].id;
+
+    save();
+    render();
+    showToast(`Deleted ${count} past ${pluralise(count, 'trip')}`);
+  }
+
   function addItem() {
     const name = els.newItemName.value.trim();
 
@@ -1153,13 +1241,14 @@
       return;
     }
 
+    const offerUndo = captureItemUndo();
     for (const item of getCurrentTrip().items) {
       item.packed = false;
     }
 
     save();
     render();
-    showToast('Packed checkmarks cleared');
+    offerUndo('Packed checkmarks cleared');
   }
 
   // ---------------------------------------------------------------------------
@@ -1353,6 +1442,7 @@
 
   function savePreferences(next) {
     state.preferences = normalisePreferences(next);
+    window.packingTheme?.apply(state.preferences.theme);
     for (const trip of state.trips) applyInternationalDetection(trip);
     applyWeatherRules(getCurrentTrip());
     save();
@@ -1361,6 +1451,8 @@
 
   function renderSettings() {
     const prefs = preferences();
+    window.packingTheme?.apply(prefs.theme);
+    byId('themePreference').value = prefs.theme;
     byId('settingsHomeLocation').value = prefs.homeLocation;
     byId('settingsHomeCountry').value = prefs.homeCountry;
     byId('homeCountry').value = getCurrentTrip().homeCountry;
@@ -1378,10 +1470,22 @@
   }
 
   function wireSettings() {
+    window.packingTheme?.apply(preferences().theme);
+    const changeTheme = theme => {
+      state.preferences = { ...preferences(), theme };
+      window.packingTheme?.apply(theme);
+      byId('themePreference').value = theme;
+      save();
+    };
+    byId('themeToggle').addEventListener('click', () => {
+      changeTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+    });
+    byId('themePreference').addEventListener('change', event => changeTheme(event.target.value));
     window.addEventListener('hashchange', renderPage);
     byId('settingsForm').addEventListener('submit', event => {
       event.preventDefault();
       savePreferences({
+        theme: byId('themePreference').value,
         homeLocation: byId('settingsHomeLocation').value.trim(),
         homeCountry: byId('settingsHomeCountry').value,
         hotTemperature: Number(byId('hotTemperature').value),
@@ -1663,6 +1767,7 @@
     byId('newTripBtn').addEventListener('click', createNewTrip);
     byId('duplicateTripBtn').addEventListener('click', duplicateCurrentTrip);
     byId('deleteTripBtn').addEventListener('click', deleteCurrentTrip);
+    byId('deletePastTripsBtn').addEventListener('click', deletePastTrips);
   }
 
   function wireRuleControls() {
@@ -1737,8 +1842,8 @@
   }
 
   function wireFilterControls() {
-    els.searchItems.addEventListener('input', (event) => {
-      filters.search = event.target.value;
+    els.packedFilter.addEventListener('change', (event) => {
+      filters.packed = event.target.value;
       renderPackingList(getCurrentTrip());
     });
 
@@ -1752,8 +1857,8 @@
       renderPackingList(getCurrentTrip());
     });
 
-    els.missingOnly.addEventListener('change', (event) => {
-      filters.missingOnly = event.target.checked;
+    els.hideZeroCount.addEventListener('change', (event) => {
+      filters.hideZeroCount = event.target.checked;
       renderPackingList(getCurrentTrip());
     });
   }
@@ -1769,6 +1874,15 @@
     });
 
     els.tables.addEventListener('click', (event) => {
+      const stepper = event.target.closest('[data-step-field]');
+      if (stepper) {
+        const item = getCurrentTrip().items.find(item => item.id === stepper.dataset.id);
+        if (!item) return;
+        const field = stepper.dataset.stepField;
+        const value = field === 'quantity' ? getItemTotal(item) : wholeNumber(item[field]);
+        updateItem(item.id, field, Math.max(0, value + Number(stepper.dataset.step)));
+        return;
+      }
       const category = event.target.closest('[data-toggle-cat]')?.dataset.toggleCat;
       if (category) {
         toggleCategory(category);
@@ -1787,13 +1901,15 @@
       const item = getCurrentTrip().items.find((candidate) => candidate.id === itemIdToDelete);
       if (!item) return;
 
-      if (confirm(`Delete “${item.name}”?`)) {
+      {
+        const offerUndo = captureItemUndo();
         getCurrentTrip().items = getCurrentTrip().items.filter(
           (candidate) => candidate.id !== itemIdToDelete,
         );
 
         save();
         render();
+        offerUndo(`${item.name} deleted`);
       }
     });
 
